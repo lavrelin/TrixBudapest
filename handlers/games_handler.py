@@ -637,4 +637,21 @@ async def admgamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     command_text = update.message.text
-    game_version =
+    game_version = word_game.get_game_version(command_text)
+    
+    text = f"""🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ {game_version.upper()}:**
+
+**🎯 Управление словами:**
+• `/{game_version}wordadd слово` – добавить слово
+• `/{game_version}wordedit слово описание` – изменить
+• `/{game_version}wordclear слово` – удалить слово
+• `/{game_version}wordon` – запустить конкурс
+• `/{game_version}wordoff` – завершить конкурс
+• `/{game_version}anstimeset минуты` – интервал попыток
+
+**🎲 Управление розыгрышем:**
+• `/{game_version}roll 1-5` – провести розыгрыш
+• `/{game_version}rollreset` – сбросить участников
+• `/{game_version}rollstatus` – список участников"""
+
+    await update.message.reply_text(text, parse_mode='Markdown')
