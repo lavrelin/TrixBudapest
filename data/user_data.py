@@ -81,14 +81,18 @@ def mute_user(user_id: int, until: datetime):
 def unmute_user(user_id: int):
     """Размучивает пользователя"""
     if user_id in user_data:
-        user_data[user_id]['muted_until'] = None, re.IGNORECASE)
-    return url_pattern.match(url) is not None
+        user_data[user_id]['muted_until'] = None
+    return bool(re.match(pattern, username))
 
-def is_valid_telegram_username(username: str) -> bool:
-    """Проверяет валидность Telegram username"""
-    if username.startswith('@'):
-        username = username[1:]
+def sanitize_text(text: str) -> str:
+    """Очищает текст от потенциально опасного содержимого"""
+    if not text:
+        return ""
     
-    pattern = r'^[a-zA-Z][a-zA-Z0-9_]{4,31}# TrixBot - Refactored Structure
-
-## 📁 Новая структура проекта
+    # Удаляем множественные пробелы
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Удаляем начальные и конечные пробелы
+    text = text.strip()
+    
+    return text
