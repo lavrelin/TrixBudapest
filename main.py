@@ -130,7 +130,7 @@ def main():
     
     # ========== ОБРАБОТЧИКИ СООБЩЕНИЙ ==========
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.DOCUMENT, handle_media_messages))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, handle_media_messages))
     
     # Запуск автопостинга
     loop = asyncio.new_event_loop()
