@@ -103,47 +103,22 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     command_text = update.message.text
     game_version = word_game.get_game_version(command_text)
-    
-    text = f"""🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ {game_version.upper()}:**
+    word = context.args[0].lower()
 
-**🎯 Управление словами:**
-• `/{game_version}wordadd слово` – добавить слово
-• `/{game_version}wordedit слово описание` – изменить
-• `/{game_version}wordclear слово` – удалить слово
-• `/{game_version}wordon` – запустить конкурс
-• `/{game_version}wordoff` – завершить конкурс
-• `/{game_version}wordinfoedit текст` – изменить описание
-• `/{game_version}anstimeset минуты` – интервал попыток
+    # Добавление слова в словарь игры
+    word_game.games_data[game_version]['words'][word] = {
+        'description': f'Угадайте слово: {word}',
+        'hints': [],
+        'media': []
+    }
 
-**🎲 Управление розыгрышем:**
-• `/{game_version}roll [1-5]` – провести розыгрыш
-• `/{game_version}rollreset` – сбросить участников
-• `/{game_version}rollstatus` – список участников
-
-**👥 Пользовательские команды:**
-• `/{game_version}say слово` – попытка угадать
-• `/{game_version}wordinfo` – информация о конкурсе
-• `/{game_version}roll 9999` – получить номер
-• `/{game_version}mynumber` – проверить номер"""
-
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-game_version = word_game.get_game_version(command_text)
-word = context.args[0].lower()
-
-word_game.games_data[game_version]['words'][word] = {
-    'description': f'Угадайте слово: {word}',
-    'hints': [],
-    'media': []
-}
-    
+    # Сообщение пользователю
     await update.message.reply_text(
         f"✅ **Слово добавлено в игру {game_version}:**\n\n"
         f"🎯 Слово: {word}\n"
         f"📝 Описание: {word_game.games_data[game_version]['words'][word]['description']}",
         parse_mode='Markdown'
     )
-
 async def wordedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Редактировать слово"""
     if not Config.is_admin(update.effective_user.id):
