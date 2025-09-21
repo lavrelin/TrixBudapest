@@ -1,6 +1,6 @@
-# services/db.py
+# -*- coding: utf-8 -*-
 import logging
-from typing import Optional, AsyncContextManager
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,13 @@ class DatabaseService:
     async def save_user(self, user_data):
         """Сохранить пользователя"""
         logger.info(f"User saved (mock): {user_data.get('username', 'unknown')}")
+        return True
 
 class MockSession:
     """Заглушка для сессии БД"""
+    
+    def __init__(self):
+        pass
     
     async def __aenter__(self):
         return self
@@ -46,6 +50,15 @@ class MockSession:
     
     async def close(self):
         pass
+    
+    def add(self, obj):
+        pass
+    
+    async def execute(self, query):
+        return None
+    
+    async def scalar(self, query):
+        return None
 
 # Глобальный экземпляр
 db_service = DatabaseService()
