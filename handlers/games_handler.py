@@ -126,14 +126,16 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/{game_version}roll 9999` – получить номер
 • `/{game_version}mynumber` – проверить номер"""
 
-    await update.message.reply_text(text, parse_mode='Markdown') word_game.get_game_version(command_text)
-    word = context.args[0].lower()
-    
-    word_game.games_data[game_version]['words'][word] = {
-        'description': f'Угадайте слово: {word}',
-        'hints': [],
-        'media': []
-    }
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+game_version = word_game.get_game_version(command_text)
+word = context.args[0].lower()
+
+word_game.games_data[game_version]['words'][word] = {
+    'description': f'Угадайте слово: {word}',
+    'hints': [],
+    'media': []
+   }
     
     await update.message.reply_text(
         f"✅ **Слово добавлено в игру {game_version}:**\n\n"
