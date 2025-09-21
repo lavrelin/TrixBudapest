@@ -36,6 +36,7 @@ def is_valid_url(url: str) -> bool:
         r'localhost|'  # localhost...
         r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
         r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)# TrixBot - Refactored Structure
-
-## 📁 Новая структура проекта
+        r'(?:/?|[/?]\S+)',  # path
+        re.IGNORECASE
+    )
+    return re.match(url_pattern, url) is not None
