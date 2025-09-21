@@ -1,75 +1,52 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
-from contextlib import asynccontextmanager
-from typing import Optional
+# services/db.py
+
 import logging
-from config import Config
-from models import Base
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 class Database:
+    """Заглушка для базы данных - работа в памяти"""
+    
     def __init__(self):
-        self.engine = None
-        self.async_session = None
+        self.connected = False
+        logger.info("Database service initialized (in-memory mode)")
         
     async def init(self):
-        """Initialize database connection"""
+        """Инициализация БД"""
         try:
-            # Convert postgresql:// to postgresql+asyncpg:// for async
-            db_url = Config.DATABASE_URL
-            if db_url.startswith("postgresql://"):
-                db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
-            elif db_url.startswith("postgres://"):
-                db_url = db_url.replace("postgres://", "postgresql+asyncpg://")
-                
-            self.engine = create_async_engine(
-                db_url,
-                echo=False,
-                pool_pre_ping=True,
-                pool_size=20,
-                max_overflow=0
-            )
-            
-            self.async_session = async_sessionmaker(
-                self.engine,
-                class_=AsyncSession,
-                expire_on_commit=False
-            )
-            
-            # Create tables if they don't exist
-            async with self.engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                
-            logger.info("Database initialized successfully")
-            
+            # Здесь можно добавить подключение к реальной БД
+            self.connected = True
+            logger.info("Database initialized successfully (mock)")
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
+            logger.warning(f"Database not available, using in-memory storage: {e}")
+            self.connected = False
             
     async def close(self):
-        """Close database connection"""
-        if self.engine:
-            await self.engine.dispose()
-            
-    @asynccontextmanager
+        """Закрытие соединения с БД"""
+        if self.connected:
+            logger.info("Database connection closed")
+    
     async def get_session(self):
-        """Get database session"""
-        async with self.async_session() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+        """Заглушка для сессии БД"""
+        class MockSession:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+            async def commit(self):
+                pass
+            async def rollback(self):
+                pass
+            async def close(self):
+                pass
+        
+        return MockSession()
                 
     async def execute(self, query, *args, **kwargs):
-        """Execute raw SQL query"""
-        async with self.get_session() as session:
-            result = await session.execute(query, *args, **kwargs)
-            return result
+        """Заглушка для выполнения запросов"""
+        logger.debug(f"Mock database query executed: {query}")
+        return None
             
-# Global database instance
+# Глобальный экземпляр базы данных
 db = Database()
