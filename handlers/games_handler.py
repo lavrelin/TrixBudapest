@@ -135,7 +135,7 @@ word_game.games_data[game_version]['words'][word] = {
     'description': f'Угадайте слово: {word}',
     'hints': [],
     'media': []
-   }
+}
     
     await update.message.reply_text(
         f"✅ **Слово добавлено в игру {game_version}:**\n\n"
