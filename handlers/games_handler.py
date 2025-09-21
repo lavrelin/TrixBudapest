@@ -92,7 +92,7 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     if not context.args:
         await update.message.reply_text(
             "📝 Использование: `/play3xiawordadd слово`\n"
@@ -100,10 +100,10 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
         return
-    
+
     command_text = update.message.text
     game_version = word_game.get_game_version(command_text)
-    
+
     text = f"""🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ {game_version.upper()}:**
 
 **🎯 Управление словами:**
@@ -128,21 +128,13 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode='Markdown')
 
-game_version = word_game.get_game_version(command_text)
-word = context.args[0].lower()
-
-word_game.games_data[game_version]['words'][word] = {
-    'description': f'Угадайте слово: {word}',
-    'hints': [],
-    'media': []
-}
-    
-    await update.message.reply_text(
-        f"✅ **Слово добавлено в игру {game_version}:**\n\n"
-        f"🎯 Слово: {word}\n"
-        f"📝 Описание: {word_game.games_data[game_version]['words'][word]['description']}",
-        parse_mode='Markdown'
-    )
+    # Добавляем слово "тихо", без вывода результата пользователю
+    word = context.args[0].lower()
+    word_game.games_data[game_version]['words'][word] = {
+        'description': f'Угадайте слово: {word}',
+        'hints': [],
+        'media': []
+    }
 
 async def wordedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Редактировать слово"""
