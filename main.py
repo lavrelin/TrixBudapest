@@ -29,10 +29,10 @@ from handlers.view_page_handler import (
     view_page_add_command, view_page_edit_command, view_page_info_command
 )
 from handlers.games_handler import (
-    wordadd_command, wordedit_command, wordon_command, wordoff_command,
-    wordinfo_command, wordinfoedit_command, anstimeset_command,
-    gamesinfo_command, admgamesinfo_command, game_say_command,
-    roll_participant_command, rollreset_command, rollstatus_command, mynumber_command
+       wordadd_command, wordedit_command, wordon_command, wordoff_command,
+       wordinfo_command, wordinfoedit_command, anstimeset_command,
+       gamesinfo_command, admgamesinfo_command, game_say_command,
+       roll_participant_command, rollreset_command, rollstatus_command, mynumber_command
 )
 from handlers.message_handler import handle_text_messages, handle_media_messages
 from services.autopost_service import autopost_service
