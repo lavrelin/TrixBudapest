@@ -11,11 +11,10 @@ from dotenv import load_dotenv
 from config import Config
 
 # Import handlers
-from handlers.start_handler import (
-    start_command, help_command, handle_start_menu_callback, handle_links_callback
-)
+from handlers.start_handler import start_command, help_command
 from handlers.basic_handler import (
-    id_command, whois_command, join_command, participants_command, report_command
+    id_command, whois_command, join_command, participants_command, 
+    report_command, help_extended_command
 )
 from handlers.link_handler import (
     trixlinks_command, trixlinksadd_command, trixlinksedit_command, trixlinksdelete_command
@@ -26,234 +25,193 @@ from handlers.moderation_commands import (
 )
 from handlers.advanced_moderation import (
     del_command, purge_command, slowmode_command, noslowmode_command,
-    lockdown_command, antiinvite_command, tagall_command,# 📦 Полный пакет исправленных файлов
+    lockdown_command, antiinvite_command, tagall_command, admins_command
+)
+from handlers.admin_handler import admin_command, say_command, admcom_command
+from handlers.autopost_handler import autopost_command, autopost_test_command
+from handlers.games_handler import (
+    add_command, edit_command, start_game_command, stop_game_command,
+    info_command, infoedit_command, timeset_command, slovo_command,
+    addpage_command, editpage_command, page_command,
+    roll_command, rollstart_command, myroll_command, reroll_command, rollstat_command,
+    game_command, guide_command
+)
+from handlers.menu_handler import handle_menu_callback
+from handlers.message_handler import handle_text_messages, handle_media_messages
+from services.autopost_service import autopost_service
 
-## 1. handlers/start_handler.py
-```python
-# -*- coding: utf-8 -*-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CallbackQueryHandler
-from config import Config
-import logging
+load_dotenv()
 
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /start"""
-    user = update.effective_user
+async def handle_callback_query(update, context):
+    """Route callback queries to appropriate handlers"""
+    callback_data = update.callback_query.data
     
-    # Сохраняем пользователя без использования БД
     try:
-        logger.info(f"User started bot: {user.username or user.id}")
+        if callback_data.startswith("menu:"):
+            await handle_menu_callback(update, context)
+        elif callback_data.startswith("admin:"):
+            await update.callback_query.answer("Админские функции в разработке")
+        elif callback_data.startswith("pub:"):
+            await update.callback_query.answer("Публикации в разработке") 
+        elif callback_data.startswith("piar:"):
+            await update.callback_query.answer("Каталог услуг в разработке")
+        elif callback_data.startswith("actual:"):
+            await update.callback_query.answer("Актуальное в разработке")
+        else:
+            await update.callback_query.answer("Функция в разработке")
+            
     except Exception as e:
-        logger.warning(f"Could not process user data: {e}")
-    
-    # Проверяем, что команда выполняется в личке
-    if update.effective_chat.type != 'private':
-        await update.message.reply_text(
-            "📱 Напишите боту в личку для использования всех функций: @TrixLiveBot"
-        )
+        logger.error(f"Error handling callback query: {e}")
+        try:
+            await update.callback_query.answer("Произошла ошибка")
+        except:
+            pass
+
+def main():
+    """Основная функция запуска бота"""
+    if not Config.BOT_TOKEN:
+        logger.error("BOT_TOKEN not found in environment variables")
+        print("❌ Ошибка: BOT_TOKEN не найден в переменных окружения")
         return
     
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✍️ Писать", callback_data="start_menu:write"),
-            InlineKeyboardButton("📖 Читать", callback_data="start_menu:read")
-        ],
-        [
-            InlineKeyboardButton("🔗 Полезные ссылки", callback_data="start_menu:links"),
-            InlineKeyboardButton("👤 Профиль", callback_data="start_menu:profile")
-        ]
-    ])
+    application = Application.builder().token(Config.BOT_TOKEN).build()
     
-    welcome_text = f"""👋 Привет, {user.first_name or 'друг'}!
-
-🤖 Я TrixBot - ваш помощник для сообщества Будапешта
-
-📋 **Что я умею:**
-- Публиковать объявления в канал
-- Добавлять услуги в каталог
-- Проводить игры и розыгрыши
-- Помогать с полезными ссылками
-
-🎮 **Игровые команды:**
-- `/trygame` - игры версии TRY  
-- `/needgame` - игры версии NEED
-- `/moregame` - игры версии MORE
-
-🔗 **Полезное:**
-- `/trixlinks` - все ссылки сообщества
-- `/help` - подробная помощь"""
-
-    await update.message.reply_text(welcome_text, reply_markup=keyboard)
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /help"""
-    help_text = """🆘 **ПОМОЩЬ ПО БОТУ**
-
-**📝 Основные команды:**
-- `/start` - главное меню
-- `/help` - эта справка
-- `/id` - показать ваш ID
-- `/trixlinks` - полезные ссылки
-
-**🎮 Игровые команды (try/need/more):**
-- `/tryadd` - добавить слово (админ)
-- `/trystart` - запустить конкурс (админ) 
-- `/tryslovo ответ` - угадать слово
-- `/tryroll` - получить номер в розыгрыш
-- `/trypage` - страница игры
-- `/trygame` - справка для игроков
-- `/tryguide` - руководство для админов
-
-**🔗 Управление ссылками:**
-- `/trixlinks` - показать все ссылки
-- `/trixlinksadd` - добавить ссылку (админ)
-- `/trixlinksedit` - редактировать (админ)
-
-**🛡️ Модерация (админ):**
-- `/ban @user` - заблокировать
-- `/mute @user 60m` - замутить
-- `/stats` - статистика
-- `/autopost` - автопостинг
-
-**📱 Все команды работают в личке с ботом!**"""
+    # Настраиваем автопостинг
+    autopost_service.set_bot(application.bot)
     
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать главное меню"""
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✍️ Писать", callback_data="start_menu:write"),
-            InlineKeyboardButton("📖 Читать", callback_data="start_menu:read")
-        ],
-        [
-            InlineKeyboardButton("🔗 Полезные ссылки", callback_data="start_menu:links"),
-            InlineKeyboardButton("👤 Профиль", callback_data="start_menu:profile")
-        ]
-    ])
+    print("🔧 Регистрация обработчиков команд...")
     
-    await update.callback_query.edit_message_text(
-        "🏠 **Главное меню**\n\nВыберите нужный раздел:",
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
-async def show_write_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать меню написания"""
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📢 Публикация", callback_data="pub:start"),
-            InlineKeyboardButton("🗂️ Каталог услуг", callback_data="piar:start")
-        ],
-        [
-            InlineKeyboardButton("⚡ Актуальное", callback_data="actual:start"),
-            InlineKeyboardButton("🔙 Назад", callback_data="start_menu:back")
-        ]
-    ])
+    # ========== БАЗОВЫЕ КОМАНДЫ ==========
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("helpfull", help_extended_command))
+    application.add_handler(CommandHandler("id", id_command))
+    application.add_handler(CommandHandler("whois", whois_command))
+    application.add_handler(CommandHandler("join", join_command))
+    application.add_handler(CommandHandler("participants", participants_command))
+    application.add_handler(CommandHandler("report", report_command))
     
-    await update.callback_query.edit_message_text(
-        "✍️ **Что хотите написать?**\n\n"
-        "📢 **Публикация** - объявление в канал\n"
-        "🗂️ **Каталог услуг** - добавить свои услуги\n"
-        "⚡ **Актуальное** - срочное сообщение в чат",
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
-async def show_links_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать меню ссылок"""
-    from data.links_data import trix_links
+    # ========== АДМИНСКИЕ КОМАНДЫ ==========
+    application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("admcom", admcom_command))
+    application.add_handler(CommandHandler("say", say_command))
     
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Показать все ссылки", callback_data="links:show_all")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="start_menu:back")]
-    ])
+    # ========== ССЫЛКИ ==========
+    application.add_handler(CommandHandler("trixlinks", trixlinks_command))
+    application.add_handler(CommandHandler("trixlinksadd", trixlinksadd_command))
+    application.add_handler(CommandHandler("trixlinksedit", trixlinksedit_command))
+    application.add_handler(CommandHandler("trixlinksdelete", trixlinksdelete_command))
     
-    await update.callback_query.edit_message_text(
-        f"🔗 **Полезные ссылки**\n\n"
-        f"📊 Всего ссылок: {len(trix_links)}\n\n"
-        f"Нажмите кнопку чтобы увидеть все ссылки сообщества",
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
-async def show_profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать профиль пользователя"""
-    user = update.callback_query.from_user
+    # ========== МОДЕРАЦИЯ - БАЗОВАЯ ==========
+    application.add_handler(CommandHandler("ban", ban_command))
+    application.add_handler(CommandHandler("unban", unban_command))
+    application.add_handler(CommandHandler("mute", mute_command))
+    application.add_handler(CommandHandler("unmute", unmute_command))
+    application.add_handler(CommandHandler("banlist", banlist_command))
+    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("top", top_command))
+    application.add_handler(CommandHandler("lastseen", lastseen_command))
     
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Назад", callback_data="start_menu:back")]
-    ])
+    # ========== МОДЕРАЦИЯ - ПРОДВИНУТАЯ ==========
+    application.add_handler(CommandHandler("del", del_command))
+    application.add_handler(CommandHandler("purge", purge_command))
+    application.add_handler(CommandHandler("slowmode", slowmode_command))
+    application.add_handler(CommandHandler("noslowmode", noslowmode_command))
+    application.add_handler(CommandHandler("lockdown", lockdown_command))
+    application.add_handler(CommandHandler("antiinvite", antiinvite_command))
+    application.add_handler(CommandHandler("tagall", tagall_command))
+    application.add_handler(CommandHandler("admins", admins_command))
     
-    profile_text = f"""👤 **Ваш профиль**
-
-🆔 **ID:** {user.id}
-👤 **Имя:** {user.first_name or 'Не указано'}
-📧 **Username:** @{user.username or 'Не указан'}
-📅 **Дата создания:** {user.id} 
-
-🎮 **Статистика игр:** В разработке
-🏆 **Достижения:** В разработке"""
+    # ========== АВТОПОСТИНГ ==========
+    application.add_handler(CommandHandler("autopost", autopost_command))
+    application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
-    await update.callback_query.edit_message_text(
-        profile_text,
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
-# Обработчик callback-запросов для меню
-async def handle_start_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка callback-запросов меню"""
-    query = update.callback_query
-    await query.answer()
+    # ========== ИГРОВЫЕ КОМАНДЫ ==========
+    print("🎮 Регистрация игровых команд...")
     
-    data = query.data.split(":")[1]
+    # Версии игр: try, need, more
+    game_versions = ['try', 'need', 'more']
     
-    try:
-        if data == "write":
-            await show_write_menu(update, context)
-        elif data == "read":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="start_menu:back")]
-            ])
-            await query.edit_message_text(
-                "📖 **Раздел чтения**\n\nЗдесь будут новости и объявления\n\n🚧 В разработке...",
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
-        elif data == "links":
-            await show_links_menu(update, context)
-        elif data == "profile":
-            await show_profile_menu(update, context)
-        elif data == "back":
-            await show_main_menu(update, context)
-    except Exception as e:
-        logger.error(f"Error in start menu callback: {e}")
-        await query.edit_message_text("❌ Произошла ошибка. Попробуйте /start")
-
-# Обработчик для показа всех ссылок
-async def handle_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка callback-запросов ссылок"""
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split(":")[1]
-    
-    if data == "show_all":
-        from handlers.link_handler import trixlinks_command
-        # Создаем фейковое сообщение для совместимости
-        class FakeMessage:
-            def __init__(self, query):
-                self.query = query
-            
-            async def reply_text(self, text, **kwargs):
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 К ссылкам", callback_data="start_menu:links")]
-                ])
-                await query.edit_message_text(text, reply_markup=keyboard, **kwargs)
+    for version in game_versions:
+        # Команды управления словами (админ)
+        application.add_handler(CommandHandler(f"{version}add", add_command))
+        application.add_handler(CommandHandler(f"{version}edit", edit_command))
+        application.add_handler(CommandHandler(f"{version}start", start_game_command))
+        application.add_handler(CommandHandler(f"{version}stop", stop_game_command))
+        application.add_handler(CommandHandler(f"{version}infoedit", infoedit_command))
+        application.add_handler(CommandHandler(f"{version}timeset", timeset_command))
         
-        # Временно заменяем объекты для совместимости
-        update.message = FakeMessage(query)
-        await trixlinks_command(update, context)
+        # Команды для участников
+        application.add_handler(CommandHandler(f"{version}slovo", slovo_command))
+        application.add_handler(CommandHandler(f"{version}info", info_command))
+        
+        # Команды страниц (админ)
+        application.add_handler(CommandHandler(f"{version}addpage", addpage_command))
+        application.add_handler(CommandHandler(f"{version}editpage", editpage_command))
+        application.add_handler(CommandHandler(f"{version}page", page_command))
+        
+        # Команды розыгрыша
+        application.add_handler(CommandHandler(f"{version}roll", roll_command))
+        application.add_handler(CommandHandler(f"{version}rollstart", rollstart_command))
+        application.add_handler(CommandHandler(f"{version}myroll", myroll_command))
+        application.add_handler(CommandHandler(f"{version}reroll", reroll_command))
+        application.add_handler(CommandHandler(f"{version}rollstat", rollstat_command))
+        
+        # Информационные команды
+        application.add_handler(CommandHandler(f"{version}game", game_command))
+        application.add_handler(CommandHandler(f"{version}guide", guide_command))
+    
+    print(f"✅ Зарегистрировано {len(game_versions)} игровых версий: {', '.join(game_versions)}")
+    
+    # ========== CALLBACK QUERIES ==========
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
+    
+    # ========== ОБРАБОТЧИКИ СООБЩЕНИЙ ==========
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.DOCUMENT, handle_media_messages))
+    
+    print("📱 Запуск автопостинга...")
+    
+    # Запуск автопостинга
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Запускаем автопостинг в фоне
+    loop.create_task(autopost_service.start())
+    
+    # Выводим информацию о запуске
+    print("=" * 50)
+    print("🤖 TrixBot запускается...")
+    print("=" * 50)
+    print(f"📊 Всего команд: {len([h for h in application.handlers[0] if isinstance(h, CommandHandler)])}")
+    print(f"🎮 Игровые версии: {', '.join(game_versions)}")
+    print("📱 Бот работает в личных сообщениях")
+    print("🔗 Справка: /help или /helpfull")
+    print("👑 Админ панель: /admin")
+    print("=" * 50)
+    
+    # Запуск бота
+    logger.info("🤖 TrixBot starting...")
+    application.run_polling(
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True
+    )
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n👋 Бот остановлен пользователем")
+    except Exception as e:
+        print(f"❌ Критическая ошибка: {e}")
+        logger.error(f"Critical error: {e}")
