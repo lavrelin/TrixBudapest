@@ -1,232 +1,148 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+# -*- coding: utf-8 -*-
+from telegram import Update
 from telegram.ext import ContextTypes
-from config import Config
 import logging
 
 logger = logging.getLogger(__name__)
 
 async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle menu callbacks"""
+    """Обработка callback-запросов меню"""
     query = update.callback_query
     await query.answer()
     
-    data = query.data.split(":")
-    action = data[1] if len(data) > 1 else None
+    # Импортируем функции из start_handler для избежания циклических импортов
+    from handlers.start_handler import show_main_menu, show_write_menu
     
-    logger.info(f"Menu callback action: {action}")
-    
-    if action == "write":
-        from handlers.start_handler import show_write_menu
-        await show_write_menu(update, context)
-    elif action == "read":
-        from handlers.start_handler import show_main_menu
-        await show_main_menu(update, context)
-    elif action == "budapest":
-        await show_budapest_menu(update, context)
-    elif action == "catalog":
-        await show_catalog(update, context)
-    elif action == "services":  # Заявка в каталог услуг (бывший пиар)
-        await start_piar(update, context)
-    elif action == "actual":  # НОВЫЙ РАЗДЕЛ
-        await start_actual_post(update, context)
-    elif action == "back":
-        from handlers.start_handler import show_main_menu
-        await show_main_menu(update, context)
-    elif action == "announcements":
-        await show_announcements_menu(update, context)
-    elif action == "news":
-        await start_category_post(update, context, "🗯️ Будапешт", "🔔 Новости")
-    elif action == "overheard":
-        await start_category_post(update, context, "🗯️ Будапешт", "🔕 Подслушано", anonymous=True)
-    elif action == "complaints":
-        await start_category_post(update, context, "🗯️ Будапешт", "👸🏼 Жалобы", anonymous=True)
-    else:
-        logger.warning(f"Unknown menu action: {action}")
-        await query.answer("Функция в разработке", show_alert=True)
-
-async def show_budapest_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show Budapest category menu"""
-    keyboard = [
-        [InlineKeyboardButton("📣 Объявления", callback_data="menu:announcements")],
-        [InlineKeyboardButton("🔔 Новости", callback_data="menu:news")],
-        [InlineKeyboardButton("🔕 Подслушано (анонимно)", callback_data="menu:overheard")],
-        [InlineKeyboardButton("👸🏼 Жалобы (анонимно)", callback_data="menu:complaints")],
-        [InlineKeyboardButton("🙅‍♂️ Назад", callback_data="menu:write")]
-    ]
-    
-    text = (
-        "🙅‍♂️ *Пост в Будапешт*\n\n"
-        "Выберите тип публикации:\n\n"
-        "📣 *Объявления* - товары, услуги, поиски и предложения. \n"
-        "🔔 *Новости* - новая актуальная информация\n"
-        "🔕 *Подслушано* - анонимные истории, сплетни, ситуации\n"
-        "👑 *Жалобы* - анонимные недовольства и проблемы\n"
-    )
+    callback_data = query.data
+    action = callback_data.split(":")[1] if ":" in callback_data else callback_data
     
     try:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        if action == "write":
+            await show_write_menu(update, context)
+        elif action == "read":
+            await show_main_menu(update, context)  # Возврат в главное меню
+        elif action == "budapest":
+            await handle_budapest_menu(update, context)
+        elif action == "services":
+            await handle_services_menu(update, context)
+        elif action == "actual":
+            await handle_actual_menu(update, context)
+        else:
+            await query.edit_message_text("❌ Неизвестное действие меню")
     except Exception as e:
-        logger.error(f"Error in show_budapest_menu: {e}")
-        await update.callback_query.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        logger.error(f"Error in menu callback: {e}")
+        await query.edit_message_text("❌ Произошла ошибка в обработке меню")
 
-async def show_announcements_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show announcements subcategories"""
+async def handle_budapest_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка меню Будапешт/КОП"""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
     keyboard = [
-        [
-            InlineKeyboardButton("🕵🏻‍♀️ Куплю", callback_data="pub:cat:buy"),
-            InlineKeyboardButton("👷‍♀️ Работа", callback_data="pub:cat:work")
-        ],
-        [
-            InlineKeyboardButton("🕵🏼 Отдам", callback_data="pub:cat:free"),
-            InlineKeyboardButton("🏢 Аренда", callback_data="pub:cat:rent")
-        ],
-        [
-            InlineKeyboardButton("🕵🏻‍♂️ Продам", callback_data="pub:cat:sell"),
-            InlineKeyboardButton("🪙 Криптовалюта", callback_data="pub:cat:crypto")
-        ],
-        [
-            InlineKeyboardButton("🫧 Ищу ", callback_data="pub:cat:other"),
-            InlineKeyboardButton("⭐️ О себе", callback_data="pub:cat:events")
-        ],
-        [InlineKeyboardButton("🔑 Назад", callback_data="menu:budapest")]
+        [InlineKeyboardButton("📢 Канал Будапешт", callback_data="pub:budapest_channel")],
+        [InlineKeyboardButton("🕵🏼‍♀️ КОП (Барахолка)", callback_data="pub:kop_channel")],
+        [InlineKeyboardButton("🔙 Назад к выбору", callback_data="menu:write")]
     ]
     
-    text = (
-        "📣 *Объявления*\n\n"
-        "Выберите подкатегорию:"
-    )
+    text = """📢 **ВЫБЕРИТЕ КАНАЛ ДЛЯ ПУБЛИКАЦИИ**
+
+**🙅‍♂️ Канал Будапешт:**
+• Объявления и новости
+• Жалобы и отзывы
+• Подслушано
+• Важные сообщения сообщества
+
+**🕵🏼‍♀️ КОП (Куплю/Отдам/Продам):**
+• Продажа товаров
+• Покупка товаров  
+• Бесплатная отдача
+• Обмен товарами
+
+Выберите подходящий канал для вашей публикации."""
     
     await update.callback_query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
-async def start_piar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start Services form (renamed from Piar)"""
-    context.user_data['piar_data'] = {}
-    context.user_data['waiting_for'] = 'piar_name'
-    context.user_data['piar_step'] = 'name'
-    
-    keyboard = [[InlineKeyboardButton("↩️ Назад", callback_data="menu:write")]]
 
-    text = (
-        "🪄 *Подайте заявку на добавление в каталог Будапешта и всей Венгрии.*\n"
-        
-        "🧲 *Цель каталога — сделать жизнь в Будапеште проще для каждого:*\n"
-        "🧞• Мастерам — эффективнее находить клиентов,\n"
-        "🧞‍♀️• Участникам — быстрее получать нужные услуги,\n"
-        "🧞‍♂️• Сообществу — активно развиваться и расширяться.\n"
-        "🧬*Важно:* участники каталога — это Ваши будущие клиенты и партнёры. Каждая деталь, которую Вы укажете в заявке, имеет значение. От Вашей внимательности и креативности зависит, насколько быстро и легко Вас смогут найти те, кому нужны именно Ваши услуги.\n\n"
-        "После подачи Ваша заявка будет проверена и откорректирована модераторами.\n"
-        " О результате Вы получите персональное уведомление.\n\n"
-        "*Приступим к 1 из 8 шагу подачи заявки в Каталог Услуг:*\n\n"
-        "💭 *Напишите своё имя, псевдоним, никнейм - как к Вам обращаться:*"
-    )
+async def handle_services_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка меню каталога услуг"""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
-    try:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Error in start_piar: {e}")
-        await update.callback_query.answer("Ошибка. Попробуйте позже", show_alert=True)
+    keyboard = [
+        [InlineKeyboardButton("📝 Подать заявку", callback_data="piar:start_application")],
+        [InlineKeyboardButton("📋 Посмотреть каталог", url="https://t.me/trixvault")],
+        [InlineKeyboardButton("🔙 Назад к выбору", callback_data="menu:write")]
+    ]
     
-    try:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Error in start_piar: {e}")
-        await update.callback_query.answer("Ошибка. Попробуйте позже", show_alert=True)
+    text = """🙅 **КАТАЛОГ УСЛУГ**
 
-async def start_actual_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start Actual post creation - НОВЫЙ РАЗДЕЛ"""
-    context.user_data['post_data'] = {
-        'category': '⚡️Актуальное',
-        'subcategory': None,
-        'anonymous': False,
-        'is_actual': True  # Специальный флаг для актуального
-    }
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="menu:write")]]
-    
-    text = (
-        "⚡️ *Актуальное*\n"
-        "💡 *Подробнее:*\n"
-        "Этот раздел предназначен для важных и срочных сообщений.\n"
-        "Посты закрепляются в чате для общения и имеют ограниченный срок актуальности.\n\n"
-        "🫧 *Примеры сообщений для этого раздела:*\n"
-        "- Болит зуб — ищу стоматолога, который примет сегодня\n"
-        "- Срочно нужен перевозчик по Будапешту\n"
-        "- Требуются люди на подработку на завтра\n"
-        "- Потерял паспорт на вокзале Келети, имя Триксов.Т.Т., 1986 года рождения\n"
-        "- Требуются волонтёры на мероприятие сегодня\n"
-        "- Район Келенфольд — учусь стричь, нужна практика, делаю стрижки бесплатно с 10:00 до 18:00\n"
-        "🆘 *Связь с администрацией*\n"
-        "Обратиться к нашей команде можно через этот раздел.\n"
-        "⚠️ Указывайте, что сообщение предназначено для администрации❗️\n"
-        "*P.S.* Все неадекватные вопросы, предложения и т.д. останутся без ответа.\n"
-        "🚩 Пользователи, нарушающие правила, будут забанены.\n\n"
-        "🛎️ *Заключение*\n"
-        "👺 Отправляйте текст только после тщательного ознакомления с инструкцией.\n"
-        "🔥 Публикуются исключительно *актуальные* и корректные сообщения❗️\n\n"
-        "⚡️ *Введите свой текст ниже:*"
-    )
+**📋 Что это:**
+• Список мастеров и специалистов Будапешта
+• Удобный поиск по хештегам
+• Проверенные специалисты
+• Отзывы и рекомендации
 
+**👥 Кто может добавиться:**
+• Мастера маникюра, педикюра
+• Парикмахеры и стилисты
+• Врачи и медработники
+• Репетиторы и учителя
+• Строители и ремонтники
+• Водители и курьеры
+• И многие другие специалисты
+
+**📝 Заявка включает:**
+• Ваше имя и контакты
+• Описание услуг
+• Районы работы
+• Примерные цены
+• Фото работ (по желанию)
+
+Нажмите "Подать заявку" чтобы начать процесс добавления в каталог."""
+    
     await update.callback_query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
-    
-    try:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-        context.user_data['waiting_for'] = 'post_text'
-    except Exception as e:
-        logger.error(f"Error in start_actual_post: {e}")
-        await update.callback_query.answer("Ошибка. Попробуйте позже", show_alert=True)
 
-async def start_category_post(update: Update, context: ContextTypes.DEFAULT_TYPE, 
-                              category: str, subcategory: str, anonymous: bool = False):
-    """Start post creation for specific category"""
-    context.user_data['post_data'] = {
-        'category': category,
-        'subcategory': subcategory,
-        'anonymous': anonymous
-    }
+async def handle_actual_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка меню актуального"""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
-    keyboard = [[InlineKeyboardButton("↩️ Назад", callback_data="menu:budapest")]]
+    keyboard = [
+        [InlineKeyboardButton("⚡ Создать срочное", callback_data="actual:create_urgent")],
+        [InlineKeyboardButton("📱 Посмотреть чат", url="https://t.me/tgchatxxx")],
+        [InlineKeyboardButton("🔙 Назад к выбору", callback_data="menu:write")]
+    ]
     
-    anon_text = " (анонимно)" if anonymous else ""
+    text = """⚡ **АКТУАЛЬНОЕ**
+
+**🎯 Для чего используется:**
+• Срочные просьбы и предложения
+• Потерянные и найденные вещи
+• Поиск помощи "здесь и сейчас"
+• Экстренные ситуации
+
+**📋 Примеры сообщений:**
+• "Нужен стоматолог сегодня!"
+• "Потерялась сумка в 13 районе"
+• "Ищу грузчиков на завтра"
+• "Срочно нужен переводчик"
+• "Найдена собака в парке Városliget"
+
+**⚠️ Важно:**
+• Сообщения публикуются в чат
+• Закрепляются на время
+• Модерируются перед публикацией
+• Только действительно срочное
+
+**⏰ Обработка:**
+Ваше сообщение будет проверено модератором и опубликовано в течение нескольких минут."""
     
-    text = (
-        f"{category} → {subcategory}{anon_text}\n\n"
-       "✏️ Отправьте текст вашей публикации. Добавьте фото или видео файлы.\n"
+    await update.callback_query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
     )
-    
-    try:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-        context.user_data['waiting_for'] = 'post_text'
-    except Exception as e:
-        logger.error(f"Error in start_category_post: {e}")
-        await update.callback_query.answer("Ошибка. Попробуйте позже", show_alert=True)
