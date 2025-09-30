@@ -91,6 +91,9 @@ async def handle_all_callbacks(update: Update, context):
             await handle_admin_callback(update, context)
         elif handler_type == "profile":
             await handle_profile_callback(update, context)
+        elif handler_type == "game":
+            from handlers.games_handler import handle_game_callback
+            await handle_game_callback(update, context)
         else:
             await query.answer("⚠️ Неизвестная команда", show_alert=True)
             logger.warning(f"Unknown callback type: {handler_type}")
@@ -100,7 +103,7 @@ async def handle_all_callbacks(update: Update, context):
             await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
         except:
             pass
-
+            
 async def handle_messages(update: Update, context):
     """Главный обработчик сообщений"""
     user_id = update.effective_user.id
