@@ -12,160 +12,217 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def get_target_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Универсальная функция для получения ID пользователя
+    Поддерживает: @username, ID, reply
+    """
+    # Проверка reply
+    if update.message.reply_to_message:
+        return update.message.reply_to_message.from_user.id
+    
+    # Проверка аргументов
+    if not context.args:
+        return None
+    
+    target = context.args[0]
+    
+    # Если это @username
+    if target.startswith('@'):
+        user_info = get_user_by_username(target[1:])
+        return user_info['id'] if user_info else None
+    
+    # Если это ID
+    if target.isdigit():
+        return int(target)
+    
+    return None
+
 async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Заблокировать пользователя"""
+    """Заблокировать пользователя - поддерживает @username, ID и reply"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if not context.args:
-        await update.message.reply_text("📝 Использование: `/ban @username причина`", parse_mode='Markdown')
-        return
+    target_id = get_target_user_id(update, context)
     
-    target = context.args[0]
-    reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
-    
-    # Поиск пользователя
-    target_id = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-        target_id = user_info['id'] if user_info else None
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if target_id and user_info:
-        ban_user(target_id, reason)
-        
+    if not target_id:
         await update.message.reply_text(
-            f"🚫 **Пользователь заблокирован:**\n\n"
-            f"👤 Пользователь: {target}\n"
-            f"📝 Причина: {reason}\n"
-            f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            "📝 **Использование:**\n"
+            "• `/ban @username причина`\n"
+            "• `/ban ID причина`\n"
+            "• Ответьте на сообщение: `/ban причина`",
             parse_mode='Markdown'
         )
-        
-        # Уведомляем модераторов
-        try:
-            await context.bot.send_message(
-                chat_id=Config.MODERATION_GROUP_ID,
-                text=f"🚫 **Пользователь забанен:**\n\n"
-                     f"👤 {target} (ID: {target_id})\n"
-                     f"📝 Причина: {reason}\n"
-                     f"👮‍♂️ Модератор: @{update.effective_user.username}",
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logger.error(f"Error notifying moderators: {e}")
+        return
+    
+    # Получаем причину
+    if update.message.reply_to_message:
+        reason = ' '.join(context.args) if context.args else "Не указана"
     else:
-        await update.message.reply_text("❌ Пользователь не найден")
+        reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+    
+    # Получаем информацию о пользователе
+    user_info = get_user_by_id(target_id)
+    
+    if not user_info:
+        await update.message.reply_text(f"❌ Пользователь с ID {target_id} не найден")
+        return
+    
+    # Баним пользователя
+    ban_user(target_id, reason)
+    
+    await update.message.reply_text(
+        f"🚫 **Пользователь заблокирован:**\n\n"
+        f"👤 @{user_info['username']} (ID: {target_id})\n"
+        f"📝 Причина: {reason}\n"
+        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        parse_mode='Markdown'
+    )
+    
+    # Уведомляем модераторов
+    try:
+        await context.bot.send_message(
+            chat_id=Config.MODERATION_GROUP_ID,
+            text=f"🚫 **Пользователь забанен:**\n\n"
+                 f"👤 @{user_info['username']} (ID: {target_id})\n"
+                 f"📝 Причина: {reason}\n"
+                 f"👮‍♂️ Модератор: @{update.effective_user.username}",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"Error notifying moderators: {e}")
 
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Разблокировать пользователя"""
+    """Разблокировать пользователя - поддерживает @username, ID и reply"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if not context.args:
-        await update.message.reply_text("📝 Использование: `/unban @username`", parse_mode='Markdown')
-        return
+    target_id = get_target_user_id(update, context)
     
-    target = context.args[0]
-    
-    # Поиск пользователя
-    target_id = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-        target_id = user_info['id'] if user_info else None
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if target_id and user_info:
-        unban_user(target_id)
-        
+    if not target_id:
         await update.message.reply_text(
-            f"✅ **Пользователь разблокирован:**\n\n"
-            f"👤 Пользователь: {target}\n"
-            f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            "📝 **Использование:**\n"
+            "• `/unban @username`\n"
+            "• `/unban ID`\n"
+            "• Ответьте на сообщение: `/unban`",
             parse_mode='Markdown'
         )
-    else:
-        await update.message.reply_text("❌ Пользователь не найден")
+        return
+    
+    user_info = get_user_by_id(target_id)
+    
+    if not user_info:
+        await update.message.reply_text(f"❌ Пользователь с ID {target_id} не найден")
+        return
+    
+    unban_user(target_id)
+    
+    await update.message.reply_text(
+        f"✅ **Пользователь разблокирован:**\n\n"
+        f"👤 @{user_info['username']} (ID: {target_id})\n"
+        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        parse_mode='Markdown'
+    )
 
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Временно замутить пользователя"""
+    """Временно замутить пользователя - поддерживает @username, ID и reply"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if len(context.args) < 2:
-        await update.message.reply_text("📝 Использование: `/mute @username время` (например: 10m, 1h, 1d)", parse_mode='Markdown')
-        return
+    # Проверяем аргументы
+    if update.message.reply_to_message:
+        target_id = update.message.reply_to_message.from_user.id
+        if not context.args:
+            await update.message.reply_text(
+                "📝 Укажите время мута (например: 10m, 1h, 1d)"
+            )
+            return
+        time_str = context.args[0]
+    else:
+        if len(context.args) < 2:
+            await update.message.reply_text(
+                "📝 **Использование:**\n"
+                "• `/mute @username время`\n"
+                "• `/mute ID время`\n"
+                "• Ответьте на сообщение: `/mute время`\n\n"
+                "**Примеры времени:** 10m, 1h, 1d",
+                parse_mode='Markdown'
+            )
+            return
+        
+        target = context.args[0]
+        time_str = context.args[1]
+        
+        if target.startswith('@'):
+            user_info = get_user_by_username(target[1:])
+            target_id = user_info['id'] if user_info else None
+        elif target.isdigit():
+            target_id = int(target)
+        else:
+            await update.message.reply_text("❌ Неверный формат пользователя")
+            return
     
-    target = context.args[0]
-    time_str = context.args[1]
+    if not target_id:
+        await update.message.reply_text("❌ Пользователь не найден")
+        return
     
     seconds = parse_time(time_str)
     if not seconds:
         await update.message.reply_text("❌ Некорректный формат времени. Используйте: 10m, 1h, 1d")
         return
     
-    # Поиск пользователя
-    target_id = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-        target_id = user_info['id'] if user_info else None
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
+    user_info = get_user_by_id(target_id)
     
-    if target_id and user_info:
-        mute_until = datetime.now() + timedelta(seconds=seconds)
-        mute_user(target_id, mute_until)
-        
-        await update.message.reply_text(
-            f"🔇 **Пользователь замучен:**\n\n"
-            f"👤 Пользователь: {target}\n"
-            f"⏰ До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n"
-            f"🕐 На: {time_str}",
-            parse_mode='Markdown'
-        )
-    else:
-        await update.message.reply_text("❌ Пользователь не найден")
+    if not user_info:
+        await update.message.reply_text(f"❌ Пользователь с ID {target_id} не найден")
+        return
+    
+    mute_until = datetime.now() + timedelta(seconds=seconds)
+    mute_user(target_id, mute_until)
+    
+    await update.message.reply_text(
+        f"🔇 **Пользователь замучен:**\n\n"
+        f"👤 @{user_info['username']} (ID: {target_id})\n"
+        f"⏰ До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n"
+        f"🕐 На: {time_str}",
+        parse_mode='Markdown'
+    )
 
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Снять мут с пользователя"""
+    """Снять мут с пользователя - поддерживает @username, ID и reply"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if not context.args:
-        await update.message.reply_text("📝 Использование: `/unmute @username`", parse_mode='Markdown')
-        return
+    target_id = get_target_user_id(update, context)
     
-    target = context.args[0]
-    
-    # Поиск пользователя
-    target_id = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-        target_id = user_info['id'] if user_info else None
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if target_id and user_info:
-        unmute_user(target_id)
-        
+    if not target_id:
         await update.message.reply_text(
-            f"🔊 **Мут снят:**\n\n"
-            f"👤 Пользователь: {target}\n"
-            f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            "📝 **Использование:**\n"
+            "• `/unmute @username`\n"
+            "• `/unmute ID`\n"
+            "• Ответьте на сообщение: `/unmute`",
             parse_mode='Markdown'
         )
-    else:
-        await update.message.reply_text("❌ Пользователь не найден")
+        return
+    
+    user_info = get_user_by_id(target_id)
+    
+    if not user_info:
+        await update.message.reply_text(f"❌ Пользователь с ID {target_id} не найден")
+        return
+    
+    unmute_user(target_id)
+    
+    await update.message.reply_text(
+        f"🔊 **Мут снят:**\n\n"
+        f"👤 @{user_info['username']} (ID: {target_id})\n"
+        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        parse_mode='Markdown'
+    )
 
 async def banlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Список забаненных пользователей"""
@@ -182,7 +239,9 @@ async def banlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"🚫 **Забаненные пользователи ({len(banned_users)}):**\n\n"
     
     for i, user in enumerate(banned_users, 1):
-        text += f"{i}. @{user['username']}\n"
+        text += f"{i}. @{user['username']} (ID: {user['id']})\n"
+        if user.get('ban_reason'):
+            text += f"   Причина: {user['ban_reason']}\n"
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
@@ -226,42 +285,44 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Последнее время активности пользователя"""
+    """Последнее время активности пользователя - поддерживает @username, ID и reply"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if not context.args:
-        await update.message.reply_text("📝 Использование: `/lastseen @username`", parse_mode='Markdown')
-        return
+    target_id = get_target_user_id(update, context)
     
-    target = context.args[0]
-    
-    # Поиск пользователя
-    user_info = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-    elif target.isdigit():
-        user_info = get_user_by_id(int(target))
-    
-    if user_info:
-        last_seen = user_info['last_activity']
-        time_diff = datetime.now() - last_seen
-        
-        if time_diff.seconds < 60:
-            time_str = "только что"
-        elif time_diff.seconds < 3600:
-            time_str = f"{time_diff.seconds // 60} минут назад"
-        elif time_diff.days == 0:
-            time_str = f"{time_diff.seconds // 3600} часов назад"
-        else:
-            time_str = f"{time_diff.days} дней назад"
-        
+    if not target_id:
         await update.message.reply_text(
-            f"👤 **Последняя активность {target}:**\n\n"
-            f"⏰ {last_seen.strftime('%d.%m.%Y %H:%M')}\n"
-            f"🕐 {time_str}",
+            "📝 **Использование:**\n"
+            "• `/lastseen @username`\n"
+            "• `/lastseen ID`\n"
+            "• Ответьте на сообщение: `/lastseen`",
             parse_mode='Markdown'
         )
+        return
+    
+    user_info = get_user_by_id(target_id)
+    
+    if not user_info:
+        await update.message.reply_text(f"❌ Пользователь с ID {target_id} не найден")
+        return
+    
+    last_seen = user_info['last_activity']
+    time_diff = datetime.now() - last_seen
+    
+    if time_diff.seconds < 60:
+        time_str = "только что"
+    elif time_diff.seconds < 3600:
+        time_str = f"{time_diff.seconds // 60} минут назад"
+    elif time_diff.days == 0:
+        time_str = f"{time_diff.seconds // 3600} часов назад"
     else:
-        await update.message.reply_text("❌ Пользователь не найден")
+        time_str = f"{time_diff.days} дней назад"
+    
+    await update.message.reply_text(
+        f"👤 **Последняя активность @{user_info['username']}:**\n\n"
+        f"⏰ {last_seen.strftime('%d.%m.%Y %H:%M')}\n"
+        f"🕐 {time_str}",
+        parse_mode='Markdown'
+    )
