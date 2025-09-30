@@ -42,7 +42,7 @@ class AutopostService:
         self.task = asyncio.create_task(self._autopost_loop())
         logger.info("Autopost service started")
     
-    async def stop(self):
+async def stop(self):
     """Останавливает службу автопостинга"""
     if self.task:
         self.task.cancel()
