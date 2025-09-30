@@ -1,4 +1,4 @@
- from telegram import Update
+from telegram import Update
 from telegram.ext import ContextTypes
 from config import Config
 from services.autopost_service import autopost_service
