@@ -51,7 +51,8 @@ from handlers.games_handler import (
     wordinfoedit_command, anstimeset_command,
     gamesinfo_command, admgamesinfo_command, game_say_command,
     roll_participant_command, roll_draw_command,
-    rollreset_command, rollstatus_command, mynumber_command
+    rollreset_command, rollstatus_command, mynumber_command,
+    handle_game_text_input, handle_game_media_input
 )
 from services.autopost_service import autopost_service
 from services.db import db
@@ -103,6 +104,15 @@ async def handle_all_callbacks(update: Update, context):
 async def handle_messages(update: Update, context):
     """Главный обработчик сообщений"""
     user_id = update.effective_user.id
+    
+    # Сначала проверяем игровые хендлеры
+    if await handle_game_text_input(update, context):
+        logger.info(f"Игровой текст обработан для пользователя {user_id}")
+        return
+    
+    if await handle_game_media_input(update, context):
+        logger.info(f"Игровое медиа обработано для пользователя {user_id}")
+        return
     
     # Проверяем waiting_for для специальных состояний
     waiting_for = context.user_data.get('waiting_for')
