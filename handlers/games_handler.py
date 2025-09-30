@@ -125,10 +125,12 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/{game_version}wordinfo` – информация о конкурсе
 • `/{game_version}roll 9999` – получить номер
 • `/{game_version}mynumber` – проверить номер"""
-
-    await update.message.reply_text(text, parse_mode='Markdown') word_game.get_game_version(command_text)
-    word = context.args[0].lower()
     
+    # показываем подсказки
+    await update.message.reply_text(text, parse_mode='Markdown')
+    
+    # добавляем слово
+    word = context.args[0].lower()
     word_game.games_data[game_version]['words'][word] = {
         'description': f'Угадайте слово: {word}',
         'hints': [],
