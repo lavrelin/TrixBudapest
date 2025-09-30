@@ -54,29 +54,32 @@ class AutopostService:
         logger.info("Autopost service stopped")
     
     async def _autopost_loop(self):
-        """Основной цикл автопостинга"""
-        logger.info("Autopost loop started")
-        
-        while True:
-            try:
-                if await self._should_send_post():
-                    success = await self._send_autopost()
-                    if success:
-                        self.data['last_post'] = datetime.now()
-                        logger.info("Autopost sent successfully")
-                    else:
-                        logger.error("Failed to send autopost")
-                
-                # Проверяем каждую минуту
-                await asyncio.sleep(60)
-                
-            except asyncio.CancelledError:
-                logger.info("Autopost loop cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Error in autopost loop: {e}")
-                await asyncio.sleep(60)
+    """Основной цикл автопостинга"""
+    logger.info("Autopost loop started")
     
+    while True:
+        try:
+            if not self.data['enabled']:
+                await asyncio.sleep(60)
+                continue
+            
+            if await self._should_send_post():
+                success = await self._send_autopost()
+                if success:
+                    self.data['last_post'] = datetime.now()
+                    logger.info("Autopost sent successfully")
+                else:
+                    logger.error("Failed to send autopost")
+            
+            await asyncio.sleep(60)
+            
+        except asyncio.CancelledError:
+            logger.info("Autopost loop cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in autopost loop: {e}")
+            await asyncio.sleep(60)
+            
     async def _should_send_post(self) -> bool:
         """Проверяет, нужно ли отправить автопост"""
         if not self.data['enabled']:
