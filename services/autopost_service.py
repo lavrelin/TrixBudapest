@@ -43,17 +43,17 @@ class AutopostService:
         logger.info("Autopost service started")
     
     async def stop(self):
-        """Останавливает службу автопостинга"""
-        if self.task:
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-            self.task = None
-        logger.info("Autopost service stopped")
-    
-    async def _autopost_loop(self):
+    """Останавливает службу автопостинга"""
+    if self.task:
+        self.task.cancel()
+        try:
+            await self.task
+        except asyncio.CancelledError:
+            pass
+        self.task = None
+    logger.info("Autopost service stopped")
+
+async def _autopost_loop(self):
     """Основной цикл автопостинга"""
     logger.info("Autopost loop started")
     
