@@ -1,64 +1,50 @@
-# -*- coding: utf-8 -*-
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-class DatabaseService:
-    """Простая заглушка для базы данных"""
+class Database:
+    """Заглушка для базы данных - работа в памяти"""
     
     def __init__(self):
         self.connected = False
         logger.info("Database service initialized (in-memory mode)")
-    
+        
     async def init(self):
         """Инициализация БД"""
-        self.connected = True
-        logger.info("Database service ready")
-    
+        try:
+            # Здесь можно добавить подключение к реальной БД
+            self.connected = True
+            logger.info("Database initialized successfully (mock)")
+        except Exception as e:
+            logger.warning(f"Database not available, using in-memory storage: {e}")
+            self.connected = False
+            
     async def close(self):
-        """Закрытие соединения"""
-        self.connected = False
-        logger.info("Database service closed")
+        """Закрытие соединения с БД"""
+        if self.connected:
+            logger.info("Database connection closed")
     
-    def get_session(self):
-        """Возвращает контекстный менеджер для сессии"""
+    async def get_session(self):
+        """Заглушка для сессии БД"""
+        class MockSession:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+            async def commit(self):
+                pass
+            async def rollback(self):
+                pass
+            async def close(self):
+                pass
+        
         return MockSession()
-    
-    async def save_user(self, user_data):
-        """Сохранить пользователя"""
-        logger.info(f"User saved (mock): {user_data.get('username', 'unknown')}")
-        return True
-
-class MockSession:
-    """Заглушка для сессии БД"""
-    
-    def __init__(self):
-        pass
-    
-    async def __aenter__(self):
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-    
-    async def commit(self):
-        pass
-    
-    async def rollback(self):
-        pass
-    
-    async def close(self):
-        pass
-    
-    def add(self, obj):
-        pass
-    
-    async def execute(self, query):
+                
+    async def execute(self, query, *args, **kwargs):
+        """Заглушка для выполнения запросов"""
+        logger.debug(f"Mock database query executed: {query}")
         return None
-    
-    async def scalar(self, query):
-        return None
-
-# Глобальный экземпляр
-db_service = DatabaseService()
+            
+# Глобальный экземпляр базы данных
+db = Database()
