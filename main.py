@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import logging
 import asyncio
 from telegram import Update
@@ -52,7 +53,6 @@ from handlers.games_handler import (
     roll_participant_command, roll_draw_command,
     rollreset_command, rollstatus_command, mynumber_command
 )
-from handlers.hp_handler import hp_command, handle_hp_callback   # 🔥 добавили импорт
 from services.autopost_service import autopost_service
 from services.db import db
 
