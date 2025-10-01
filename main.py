@@ -113,6 +113,15 @@ async def handle_messages(update: Update, context):
     logger.info(f"Message from user {user_id}, waiting_for: {waiting_for}")
     
     try:
+        # Проверка на игровой ввод
+        from handlers.games_handler import handle_game_text_input, handle_game_media_input
+        
+        if await handle_game_text_input(update, context):
+            return
+        
+        if await handle_game_media_input(update, context):
+            return
+        
         # Обработка ввода для модераторов
         if waiting_for in ['approve_link', 'reject_reason']:
             await handle_moderation_text(update, context)
@@ -196,6 +205,7 @@ def main():
     # ========== АДМИНСКИЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("say", say_command))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
     
     # ========== ССЫЛКИ ==========
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
