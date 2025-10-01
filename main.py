@@ -93,6 +93,8 @@ async def handle_all_callbacks(update: Update, context):
         elif handler_type == "game":
             from handlers.games_handler import handle_game_callback
             await handle_game_callback(update, context)
+        elif handler_type == "hp":
+            await handle_hp_callback(update, context)
         else:
             await query.answer("⚠️ Неизвестная команда", show_alert=True)
             logger.warning(f"Unknown callback type: {handler_type}")
@@ -195,6 +197,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("id", id_command))
+    application.add_handler(CommandHandler("hp", hp_command))
     
     # ========== БАЗОВЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("whois", whois_command))
