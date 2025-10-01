@@ -597,15 +597,53 @@ async def rollstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def gamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Информация об игровых командах для пользователей"""
-    ...
+    command_text = update.message.text
+    game_version = get_game_version(command_text)
+    
+    text = f"""🎮 **ИГРОВЫЕ КОМАНДЫ {game_version.upper()}:**
+
+**🎯 Угадай слово:**
+• `/{game_version}say слово` – попытка угадать
+• `/{game_version}wordinfo` – подсказка о слове
+
+**🎲 Розыгрыш номеров:**
+• `/{game_version}roll 9999` – получить номер
+• `/{game_version}mynumber` – мой номер
+
+**ℹ️ Правила:**
+• В игре "угадай слово" есть интервал между попытками
+• В розыгрыше каждый получает уникальный номер 1-9999
+• Победители определяются администраторами"""
+
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def admgamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Информация об игровых командах для админов"""
-    ...
+    if not Config.is_admin(update.effective_user.id):
+        if update.effective_chat.type == 'private':
+            await update.message.reply_text("❌ У вас нет прав для использования этой команды")
+        return
+    
+    command_text = update.message.text
+    game_version = get_game_version(command_text)
+    
+    text = f"""🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ {game_version.upper()}:**
+
+**🎯 Управление словами:**
+• `/{game_version}wordadd слово` – добавить слово
+• `/{game_version}wordedit слово описание` – изменить
+• `/{game_version}wordclear слово` – удалить слово
+• `/{game_version}wordon` – запустить конкурс
+• `/{game_version}wordoff` – завершить конкурс
+• `/{game_version}anstimeset минуты` – интервал попыток
+
+**🎲 Управление розыгрышем:**
+• `/{game_version}roll 1-5` – провести розыгрыш
+• `/{game_version}rollreset` – сбросить участников
+• `/{game_version}rollstatus` – список участников"""
+
     await update.message.reply_text(text, parse_mode='Markdown')
 
-# Новый обработчик callback'ов
 async def handle_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка callback для игр"""
     query = update.callback_query
