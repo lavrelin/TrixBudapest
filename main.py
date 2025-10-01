@@ -51,8 +51,10 @@ from handlers.games_handler import (
     wordinfoedit_command, anstimeset_command,
     gamesinfo_command, admgamesinfo_command, game_say_command,
     roll_participant_command, roll_draw_command,
-    rollreset_command, rollstatus_command, mynumber_command
+    rollreset_command, rollstatus_command, mynumber_command,
+    handle_game_text_input, handle_game_media_input
 )
+from handlers.medicine_handler import hp_command, handle_hp_callback
 from services.autopost_service import autopost_service
 from services.db import db
 
@@ -116,8 +118,6 @@ async def handle_messages(update: Update, context):
     
     try:
         # Проверка на игровой ввод
-        from handlers.games_handler import handle_game_text_input, handle_game_media_input
-        
         if await handle_game_text_input(update, context):
             return
         
