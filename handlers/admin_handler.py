@@ -65,6 +65,28 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await show_broadcast_menu(update, context)
     elif action == "manage":
         await show_manage_menu(update, context)
+    elif action == "back":
+        # Возврат к главному меню админки
+        keyboard = [
+            [InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")],
+            [InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast")],
+            [InlineKeyboardButton("👥 Управление", callback_data="admin:manage")],
+            [InlineKeyboardButton("◀️ Главное меню", callback_data="menu:back")]
+        ]
+        
+        try:
+            await query.edit_message_text(
+                "🔧 *Панель администратора*\n\nВыберите действие:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error editing admin menu: {e}")
+            await query.message.reply_text(
+                "🔧 *Панель администратора*\n\nВыберите действие:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
     else:
         await query.answer("Функция в разработке", show_alert=True)
 
