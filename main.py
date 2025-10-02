@@ -240,30 +240,8 @@ def main():
     application.add_handler(CommandHandler("autopost", autopost_command))
     application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
-    # ========== ИГРОВЫЕ КОМАНДЫ (НОВЫЕ НАЗВАНИЯ) ==========
-    
-    # Управление словами
-    application.add_handler(CommandHandler("add", wordadd_command))
-    application.add_handler(CommandHandler("edit", wordedit_command))
-    application.add_handler(CommandHandler("start", wordon_command))
-    application.add_handler(CommandHandler("stop", wordoff_command))
-    application.add_handler(CommandHandler("info", wordinfo_command))
-    application.add_handler(CommandHandler("infoedit", wordinfoedit_command))
-    application.add_handler(CommandHandler("timeset", anstimeset_command))
-    
-    # Информационные команды
-    application.add_handler(CommandHandler("game", gamesinfo_command))
-    application.add_handler(CommandHandler("guide", admgamesinfo_command))
-    
-    # Игровые команды для пользователей
-    application.add_handler(CommandHandler("slovo", game_say_command))
-    application.add_handler(CommandHandler("roll", roll_participant_command))
-    application.add_handler(CommandHandler("rollstart", roll_draw_command))
-    application.add_handler(CommandHandler("reroll", rollreset_command))
-    application.add_handler(CommandHandler("rollstat", rollstatus_command))
-    application.add_handler(CommandHandler("myroll", mynumber_command))
-
     # ========== ИГРОВЫЕ КОМАНДЫ (ТРИ ВЕРСИИ: NEED, TRY, MORE) ==========
+    
     # VERSION: NEED
     application.add_handler(CommandHandler("needadd", wordadd_command))
     application.add_handler(CommandHandler("neededit", wordedit_command))
@@ -280,7 +258,7 @@ def main():
     application.add_handler(CommandHandler("needreroll", rollreset_command))
     application.add_handler(CommandHandler("needrollstat", rollstatus_command))
     application.add_handler(CommandHandler("needmyroll", mynumber_command))
-
+    
     # VERSION: TRY
     application.add_handler(CommandHandler("tryadd", wordadd_command))
     application.add_handler(CommandHandler("tryedit", wordedit_command))
@@ -297,7 +275,7 @@ def main():
     application.add_handler(CommandHandler("tryreroll", rollreset_command))
     application.add_handler(CommandHandler("tryrollstat", rollstatus_command))
     application.add_handler(CommandHandler("trymyroll", mynumber_command))
-
+    
     # VERSION: MORE
     application.add_handler(CommandHandler("moreadd", wordadd_command))
     application.add_handler(CommandHandler("moreedit", wordedit_command))
@@ -314,7 +292,24 @@ def main():
     application.add_handler(CommandHandler("morereroll", rollreset_command))
     application.add_handler(CommandHandler("morerollstat", rollstatus_command))
     application.add_handler(CommandHandler("moremyroll", mynumber_command))
-
+    
+    # СТАРЫЕ КОМАНДЫ (для обратной совместимости - работают как TRY)
+    application.add_handler(CommandHandler("add", wordadd_command))
+    application.add_handler(CommandHandler("edit", wordedit_command))
+    application.add_handler(CommandHandler("start", wordon_command))
+    application.add_handler(CommandHandler("stop", wordoff_command))
+    application.add_handler(CommandHandler("info", wordinfo_command))
+    application.add_handler(CommandHandler("infoedit", wordinfoedit_command))
+    application.add_handler(CommandHandler("timeset", anstimeset_command))
+    application.add_handler(CommandHandler("game", gamesinfo_command))
+    application.add_handler(CommandHandler("guide", admgamesinfo_command))
+    application.add_handler(CommandHandler("slovo", game_say_command))
+    application.add_handler(CommandHandler("roll", roll_participant_command))
+    application.add_handler(CommandHandler("rollstart", roll_draw_command))
+    application.add_handler(CommandHandler("reroll", rollreset_command))
+    application.add_handler(CommandHandler("rollstat", rollstatus_command))
+    application.add_handler(CommandHandler("myroll", mynumber_command))
+    
     # ========== ОБРАБОТЧИКИ CALLBACK И СООБЩЕНИЙ ==========
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
     application.add_handler(MessageHandler(
