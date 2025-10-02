@@ -240,30 +240,28 @@ def main():
     application.add_handler(CommandHandler("autopost", autopost_command))
     application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
-    # ========== ИГРОВЫЕ КОМАНДЫ ==========
-    game_versions = ['play3xia', 'play3x', 'playxxx']
+    # ========== ИГРОВЫЕ КОМАНДЫ (НОВЫЕ НАЗВАНИЯ) ==========
     
-    for version in game_versions:
-        # Управление словами
-        application.add_handler(CommandHandler(f"{version}wordadd", wordadd_command))
-        application.add_handler(CommandHandler(f"{version}wordedit", wordedit_command))
-        application.add_handler(CommandHandler(f"{version}wordclear", wordclear_command))
-        application.add_handler(CommandHandler(f"{version}wordon", wordon_command))
-        application.add_handler(CommandHandler(f"{version}wordoff", wordoff_command))
-        application.add_handler(CommandHandler(f"{version}wordinfo", wordinfo_command))
-        application.add_handler(CommandHandler(f"{version}wordinfoedit", wordinfoedit_command))
-        application.add_handler(CommandHandler(f"{version}anstimeset", anstimeset_command))
-        
-        # Информационные команды
-        application.add_handler(CommandHandler(f"{version}gamesinfo", gamesinfo_command))
-        application.add_handler(CommandHandler(f"{version}admgamesinfo", admgamesinfo_command))
-        
-        # Игровые команды
-        application.add_handler(CommandHandler(f"{version}say", game_say_command))
-        application.add_handler(CommandHandler(f"{version}roll", roll_participant_command))
-        application.add_handler(CommandHandler(f"{version}rollreset", rollreset_command))
-        application.add_handler(CommandHandler(f"{version}rollstatus", rollstatus_command))
-        application.add_handler(CommandHandler(f"{version}mynumber", mynumber_command))
+    # Управление словами
+    application.add_handler(CommandHandler("add", wordadd_command))
+    application.add_handler(CommandHandler("edit", wordedit_command))
+    application.add_handler(CommandHandler("start", wordon_command))
+    application.add_handler(CommandHandler("stop", wordoff_command))
+    application.add_handler(CommandHandler("info", wordinfo_command))
+    application.add_handler(CommandHandler("infoedit", wordinfoedit_command))
+    application.add_handler(CommandHandler("timeset", anstimeset_command))
+    
+    # Информационные команды
+    application.add_handler(CommandHandler("game", gamesinfo_command))
+    application.add_handler(CommandHandler("guide", admgamesinfo_command))
+    
+    # Игровые команды для пользователей
+    application.add_handler(CommandHandler("slovo", game_say_command))
+    application.add_handler(CommandHandler("roll", roll_participant_command))
+    application.add_handler(CommandHandler("rollstart", roll_draw_command))
+    application.add_handler(CommandHandler("reroll", rollreset_command))
+    application.add_handler(CommandHandler("rollstat", rollstatus_command))
+    application.add_handler(CommandHandler("myroll", mynumber_command))
     
     # ========== ОБРАБОТЧИКИ CALLBACK И СООБЩЕНИЙ ==========
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
