@@ -42,7 +42,7 @@ def get_game_version_from_command(command_text: str) -> str:
 # ============= КОМАНДЫ УПРАВЛЕНИЯ СЛОВАМИ (АДМИН) =============
 
 async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавить новое слово - /needadd /tryadd /moreadd"""
+    """Добавить новое слово"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -52,163 +52,25 @@ async def wordadd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_version = get_game_version_from_command(command_text)
     
     if not context.args:
-        text = (
-            f"🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:**\n\n"
-            f"**🎯 Управление словами:**\n"
-            f"• `/{game_version}add слово` – добавить слово\n"
-            f"• `/{game_version}edit слово описание` – изменить\n"
-            f"• `/{game_version}start` – запустить конкурс\n"
-        f"• `/{game_version}stop` – завершить конкурс\n"
-        f"• `/{game_version}timeset минуты` – интервал попыток\n\n"
-        f"**🎲 Управление розыгрышем:**\n"
-        f"• `/{game_version}rollstart 1-5` – провести розыгрыш\n"
-        f"• `/{game_version}reroll` – сбросить участников\n"
-        f"• `/{game_version}rollstat` – список участников"
-    )
+        text = f"🔧 АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:\n\n"
+        text += "🎯 Управление словами:\n"
+        text += f"• /{game_version}add слово\n"
+        text += f"• /{game_version}edit слово описание\n"
+        text += f"• /{game_version}start\n"
+        text += f"• /{game_version}stop\n"
+        text += f"• /{game_version}info\n"
+        text += f"• /{game_version}infoedit текст\n"
+        text += f"• /{game_version}timeset минуты\n\n"
+        text += "🎲 Управление розыгрышем:\n"
+        text += f"• /{game_version}rollstart 1-5\n"
+        text += f"• /{game_version}reroll\n"
+        text += f"• /{game_version}rollstat\n\n"
+        text += "👥 Пользовательские команды:\n"
+        text += f"• /{game_version}slovo слово\n"
+        text += f"• /{game_version}roll\n"
+        text += f"• /{game_version}myroll"
 
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-async def anstimeset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Задать интервал между попытками - /needtimeset /trytimeset /moretimeset"""
-    if not Config.is_admin(update.effective_user.id):
-        if update.effective_chat.type == 'private':
-            await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-    
-    command_text = update.message.text
-    game_version = get_game_version_from_command(command_text)
-    
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text(
-            f"📝 Использование: `/{game_version}timeset 60` (в минутах)", 
-            parse_mode='Markdown'
-        )
-        return
-    
-    minutes = int(context.args[0])
-    
-    word_games[game_version]['interval'] = minutes
-    
-    await update.message.reply_text(
-        f"✅ **Интервал обновлен [{game_version.upper()}]:**\n\n"
-        f"⏰ Новый интервал: {minutes} минут",
-        parse_mode='Markdown'
-    )
-
-async def wordinfoedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Изменить описание конкурса (админ) - /needinfoedit /tryinfoedit /moreinfoedit"""
-    if not Config.is_admin(update.effective_user.id):
-        if update.effective_chat.type == 'private':
-            await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-    
-    command_text = update.message.text
-    game_version = get_game_version_from_command(command_text)
-    
-    if not context.args:
-        await update.message.reply_text(
-            f"📝 Использование: `/{game_version}infoedit новое описание`", 
-            parse_mode='Markdown'
-        )
-        return
-    
-    new_description = ' '.join(context.args)
-    
-    word_games[game_version]['description'] = new_description
-    
-    await update.message.reply_text(
-        f"✅ **Описание изменено [{game_version.upper()}]:**\n\n{new_description}",
-        parse_mode='Markdown'
-    )
-
-async def handle_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка callback для игр"""
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split(":")
-    action = data[1] if len(data) > 1 else None
-    
-    if action == "skip_media":
-        game_version = data[2] if len(data) > 2 else None
-        word = data[3] if len(data) > 3 else None
-        
-        user_id = update.effective_user.id
-        if user_id in game_waiting:
-            game_waiting.pop(user_id)
-        
-        await query.edit_message_text(
-            f"✅ **Слово добавлено [{game_version.upper()}]:**\n\n"
-            f"📝 Слово: {word}\n\n"
-            f"Используйте `/{game_version}start` для запуска конкурса",
-            parse_mode='Markdown'
-        )
-    
-    elif action == "finish":
-        game_version = data[2] if len(data) > 2 else None
-        word = data[3] if len(data) > 3 else None
-        
-        user_id = update.effective_user.id
-        if user_id in game_waiting:
-            game_waiting.pop(user_id)
-        
-        media_count = len(word_games[game_version]['words'][word].get('media', []))
-        
-        await query.edit_message_text(
-            f"✅ **Слово готово [{game_version.upper()}]:**\n\n"
-            f"📝 Слово: {word}\n"
-            f"📸 Медиа: {media_count} файлов\n\n"
-            f"Используйте `/{game_version}start` для запуска конкурса",
-            parse_mode='Markdown'
-        )
-
-# Алиасы для обратной совместимости (старые команды)
-async def wordclear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Удалить слово (старая команда)"""
-    await update.message.reply_text(
-        "ℹ️ Команда переименована\n"
-        "Используйте новые команды с префиксами: /need, /try, /more\n"
-        "Например: /needguide, /tryguide, /moreguide для справки",
-        parse_mode='Markdown'
-    )
-
-# Экспорт всех команд для регистрации
-__all__ = [
-    'wordadd_command',
-    'wordedit_command',
-    'wordclear_command',
-    'wordon_command',
-    'wordoff_command',
-    'wordinfo_command',
-    'wordinfoedit_command',
-    'anstimeset_command',
-    'gamesinfo_command',
-    'admgamesinfo_command',
-    'game_say_command',
-    'roll_participant_command',
-    'roll_draw_command',
-    'rollreset_command',
-    'rollstatus_command',
-    'mynumber_command',
-    'handle_game_text_input',
-    'handle_game_media_input',
-    'handle_game_callback'
-]\n"
-            f"• `/{game_version}stop` – завершить конкурс\n"
-            f"• `/{game_version}info` – информация о конкурсе\n"
-            f"• `/{game_version}infoedit текст` – изменить описание\n"
-            f"• `/{game_version}timeset минуты` – интервал попыток\n\n"
-            f"**🎲 Управление розыгрышем:**\n"
-            f"• `/{game_version}rollstart количество` – провести розыгрыш (1-5 победителей)\n"
-            f"• `/{game_version}reroll` – сбросить участников\n"
-            f"• `/{game_version}rollstat` – список участников\n\n"
-            f"**👥 Пользовательские команды:**\n"
-            f"• `/{game_version}slovo слово` – попытка угадать\n"
-            f"• `/{game_version}roll` – получить номер\n"
-            f"• `/{game_version}myroll` – проверить номер"
-        )
-
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text)
         return
     
     # Добавляем слово
@@ -231,12 +93,10 @@ __all__ = [
     keyboard = [[InlineKeyboardButton("⏭️ Пропустить", callback_data=f"game:skip_media:{game_version}:{word}")]]
     
     await update.message.reply_text(
-        f"✅ **Слово добавлено в игру {game_version.upper()}:**\n\n"
+        f"✅ Слово добавлено в игру {game_version.upper()}\n\n"
         f"🎯 Слово: {word}\n\n"
-        f"📝 **Отправьте описание слова:**\n"
-        f"(или нажмите 'Пропустить' чтобы использовать стандартное)",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        f"📝 Отправьте описание слова или нажмите 'Пропустить'",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def handle_game_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -267,9 +127,8 @@ async def handle_game_text_input(update: Update, context: ContextTypes.DEFAULT_T
         keyboard = [[InlineKeyboardButton("✅ Завершить", callback_data=f"game:finish:{game_version}:{word}")]]
         
         await update.message.reply_text(
-            f"✅ **Описание сохранено [{game_version.upper()}]:**\n{text}\n\n"
-            f"📸 **Теперь можете отправить фото или видео**\n"
-            f"(или нажмите 'Завершить')",
+            f"✅ Описание сохранено [{game_version.upper()}]\n\n"
+            f"📸 Теперь можете отправить фото или видео или нажмите 'Завершить'",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return True
@@ -311,7 +170,7 @@ async def handle_game_media_input(update: Update, context: ContextTypes.DEFAULT_
         keyboard = [[InlineKeyboardButton("✅ Завершить", callback_data=f"game:finish:{game_version}:{word}")]]
         
         await update.message.reply_text(
-            f"✅ **Медиа добавлено ({media_count}) [{game_version.upper()}]**\n\n"
+            f"✅ Медиа добавлено ({media_count}) [{game_version.upper()}]\n\n"
             f"Можете добавить еще или нажмите 'Завершить'",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -320,7 +179,7 @@ async def handle_game_media_input(update: Update, context: ContextTypes.DEFAULT_
     return False
 
 async def wordedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Редактировать слово - /neededit /tryedit /moreedit"""
+    """Редактировать слово"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -330,10 +189,7 @@ async def wordedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_version = get_game_version_from_command(command_text)
     
     if len(context.args) < 2:
-        await update.message.reply_text(
-            f"📝 Использование: `/{game_version}edit слово новое_описание`",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"📝 Использование: /{game_version}edit слово новое_описание")
         return
     
     word = context.args[0].lower()
@@ -346,14 +202,13 @@ async def wordedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     word_games[game_version]['words'][word]['description'] = new_description
     
     await update.message.reply_text(
-        f"✅ **Слово обновлено в {game_version.upper()}:**\n\n"
+        f"✅ Слово обновлено в {game_version.upper()}\n\n"
         f"🎯 Слово: {word}\n"
-        f"📝 Новое описание: {new_description}",
-        parse_mode='Markdown'
+        f"📝 Новое описание: {new_description}"
     )
 
 async def wordon_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Включить режим конкурса - /needstart /trystart /morestart"""
+    """Включить режим конкурса"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -364,8 +219,7 @@ async def wordon_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not word_games[game_version]['words']:
         await update.message.reply_text(
-            f"❌ Нет слов для игры {game_version.upper()}. Добавьте слова командой `/{game_version}add`", 
-            parse_mode='Markdown'
+            f"❌ Нет слов для игры {game_version.upper()}. Добавьте слова командой /{game_version}add"
         )
         return
     
@@ -398,15 +252,14 @@ async def wordon_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Error sending media: {e}")
     
     await update.message.reply_text(
-        f"🎮 **Конкурс {game_version.upper()} НАЧАЛСЯ!**\n\n"
+        f"🎮 Конкурс {game_version.upper()} НАЧАЛСЯ!\n\n"
         f"📝 {description}\n\n"
-        f"🎯 Используйте команду `/{game_version}slovo слово` для участия\n"
-        f"⏰ Интервал между попытками: {word_games[game_version]['interval']} минут",
-        parse_mode='Markdown'
+        f"🎯 Используйте команду /{game_version}slovo слово для участия\n"
+        f"⏰ Интервал между попытками: {word_games[game_version]['interval']} минут"
     )
 
 async def wordoff_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Выключить режим конкурса - /needstop /trystop /morestop"""
+    """Выключить режим конкурса"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -426,25 +279,20 @@ async def wordoff_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         winner_text = "🏆 Победителей не было"
     
     await update.message.reply_text(
-        f"🛑 **Конкурс {game_version.upper()} ЗАВЕРШЕН!**\n\n"
+        f"🛑 Конкурс {game_version.upper()} ЗАВЕРШЕН!\n\n"
         f"🎯 Слово было: {current_word or 'не выбрано'}\n"
         f"{winner_text}\n\n"
-        f"📋 Конкурс неактивен. Ожидайте новый конкурс.",
-        parse_mode='Markdown'
+        f"📋 Конкурс неактивен. Ожидайте новый конкурс."
     )
 
 async def wordinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать информацию о текущем слове - /needinfo /tryinfo /moreinfo"""
+    """Показать информацию о текущем слове"""
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
     if not word_games[game_version]['active']:
         description = word_games[game_version].get('description', f"Конкурс {game_version.upper()} пока не активен")
-        await update.message.reply_text(
-            f"ℹ️ **Информация [{game_version.upper()}]:**\n\n"
-            f"📝 {description}",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"ℹ️ Информация [{game_version.upper()}]:\n\n📝 {description}")
         return
     
     current_word = word_games[game_version]['current_word']
@@ -470,21 +318,20 @@ async def wordinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.error(f"Error sending media: {e}")
         
         await update.message.reply_text(
-            f"🎯 **Информация о текущем конкурсе [{game_version.upper()}]:**\n\n"
+            f"🎯 Информация о текущем конкурсе [{game_version.upper()}]:\n\n"
             f"📝 {description}\n\n"
-            f"💡 Используйте `/{game_version}slovo слово` для участия",
-            parse_mode='Markdown'
+            f"💡 Используйте /{game_version}slovo слово для участия"
         )
     else:
         await update.message.reply_text(f"❌ Нет активного слова в игре {game_version.upper()}")
 
 async def game_say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Попытка угадать слово - /needslovo /tryslovo /moreslovo"""
+    """Попытка угадать слово"""
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
     if not context.args:
-        await update.message.reply_text(f"📝 Использование: `/{game_version}slovo слово`", parse_mode='Markdown')
+        await update.message.reply_text(f"📝 Использование: /{game_version}slovo слово")
         return
     
     user_id = update.effective_user.id
@@ -519,11 +366,12 @@ async def game_say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=Config.MODERATION_GROUP_ID,
-            text=f"🎮 **Игровая попытка [{game_version.upper()}]:**\n\n"
-                 f"👤 @{username} (ID: {user_id})\n"
-                 f"🎯 Попытка: {guess}\n"
-                 f"✅ Правильный ответ: {current_word}",
-            parse_mode='Markdown'
+            text=(
+                f"🎮 Игровая попытка [{game_version.upper()}]\n\n"
+                f"👤 @{username} (ID: {user_id})\n"
+                f"🎯 Попытка: {guess}\n"
+                f"✅ Правильный ответ: {current_word}"
+            )
         )
     except Exception as e:
         logger.error(f"Error sending game notification: {e}")
@@ -533,7 +381,7 @@ async def game_say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         word_games[game_version]['active'] = False
         
         await update.message.reply_text(
-            f"🎉 **ПОЗДРАВЛЯЕМ [{game_version.upper()}]!**\n\n"
+            f"🎉 ПОЗДРАВЛЯЕМ [{game_version.upper()}]!\n\n"
             f"@{username}, вы угадали слово '{current_word}' и стали победителем!\n\n"
             f"👑 Администратор свяжется с вами в ближайшее время."
         )
@@ -541,11 +389,12 @@ async def game_say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=Config.MODERATION_GROUP_ID,
-                text=f"🏆 **ПОБЕДИТЕЛЬ В ИГРЕ {game_version.upper()}!**\n\n"
-                     f"👤 @{username} (ID: {user_id})\n"
-                     f"🎯 Угадал слово: {current_word}\n\n"
-                     f"Свяжитесь с победителем!",
-                parse_mode='Markdown'
+                text=(
+                    f"🏆 ПОБЕДИТЕЛЬ В ИГРЕ {game_version.upper()}!\n\n"
+                    f"👤 @{username} (ID: {user_id})\n"
+                    f"🎯 Угадал слово: {current_word}\n\n"
+                    f"Свяжитесь с победителем!"
+                )
             )
         except Exception as e:
             logger.error(f"Error sending winner notification: {e}")
@@ -557,7 +406,7 @@ async def game_say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============= РОЗЫГРЫШ =============
 
 async def roll_participant_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Получить номер для участия в розыгрыше - /needroll /tryroll /moreroll"""
+    """Получить номер для участия в розыгрыше"""
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
@@ -576,10 +425,7 @@ async def roll_participant_command(update: Update, context: ContextTypes.DEFAULT
     
     if user_id in roll_games[game_version]['participants']:
         existing_number = roll_games[game_version]['participants'][user_id]['number']
-        await update.message.reply_text(
-            f"@{username}, у вас уже есть номер в {game_version.upper()}: **{existing_number}**",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"@{username}, у вас уже есть номер в {game_version.upper()}: {existing_number}")
         return
     
     number = get_unique_roll_number(game_version)
@@ -591,13 +437,12 @@ async def roll_participant_command(update: Update, context: ContextTypes.DEFAULT
     }
     
     await update.message.reply_text(
-        f"@{username}, ваш номер для розыгрыша {game_version.upper()}: **{number}**\n\n"
-        f"🎲 Участников: {len(roll_games[game_version]['participants'])}",
-        parse_mode='Markdown'
+        f"@{username}, ваш номер для розыгрыша {game_version.upper()}: {number}\n\n"
+        f"🎲 Участников: {len(roll_games[game_version]['participants'])}"
     )
 
 async def mynumber_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать свой номер в розыгрыше - /needmyroll /trymyroll /moremyroll"""
+    """Показать свой номер в розыгрыше"""
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
@@ -607,19 +452,15 @@ async def mynumber_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in roll_games[game_version]['participants']:
         await update.message.reply_text(
             f"@{username}, вы не участвуете в розыгрыше {game_version.upper()}\n"
-            f"Используйте `/{game_version}roll` для участия",
-            parse_mode='Markdown'
+            f"Используйте /{game_version}roll для участия"
         )
         return
     
     number = roll_games[game_version]['participants'][user_id]['number']
-    await update.message.reply_text(
-        f"@{username}, ваш номер в {game_version.upper()}: **{number}**", 
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(f"@{username}, ваш номер в {game_version.upper()}: {number}")
 
 async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Провести розыгрыш (админ) - /needrollstart /tryrollstart /morerollstart"""
+    """Провести розыгрыш (админ)"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -629,10 +470,7 @@ async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_version = get_game_version_from_command(command_text)
     
     if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text(
-            f"📝 Использование: `/{game_version}rollstart 3` (количество победителей 1-5)", 
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"📝 Использование: /{game_version}rollstart 3 (количество победителей 1-5)")
         return
     
     winners_count = min(5, max(1, int(context.args[0])))
@@ -662,16 +500,16 @@ async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         winners_text.append(f"@{username} ({number})")
     
     result_text = (
-        f"🎉 **РЕЗУЛЬТАТЫ РОЗЫГРЫША {game_version.upper()}!**\n\n"
-        f"🎲 Выигрышное число: **{winning_number}**\n\n"
+        f"🎉 РЕЗУЛЬТАТЫ РОЗЫГРЫША {game_version.upper()}!\n\n"
+        f"🎲 Выигрышное число: {winning_number}\n\n"
         f"🏆 Победители:\n" + "\n".join([f"{i+1}. {w}" for i, w in enumerate(winners_text)]) +
         f"\n\n🎊 Поздравляем победителей!"
     )
     
-    await update.message.reply_text(result_text, parse_mode='Markdown')
+    await update.message.reply_text(result_text)
 
 async def rollreset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сбросить розыгрыш (админ) - /needreroll /tryreroll /morereroll"""
+    """Сбросить розыгрыш (админ)"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -684,14 +522,13 @@ async def rollreset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     roll_games[game_version]['participants'] = {}
     
     await update.message.reply_text(
-        f"✅ **Розыгрыш {game_version.upper()} сброшен!**\n\n"
+        f"✅ Розыгрыш {game_version.upper()} сброшен!\n\n"
         f"📊 Удалено участников: {participants_count}\n"
-        f"🆕 Новый розыгрыш готов к запуску",
-        parse_mode='Markdown'
+        f"🆕 Новый розыгрыш готов к запуску"
     )
 
 async def rollstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Статус розыгрыша (админ) - /needrollstat /tryrollstat /morerollstat"""
+    """Статус розыгрыша (админ)"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -706,40 +543,38 @@ async def rollstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(f"📊 Розыгрыш {game_version.upper()}: нет участников")
         return
     
-    text = f"📊 **Статус розыгрыша [{game_version.upper()}]:**\n\n"
+    text = f"📊 Статус розыгрыша [{game_version.upper()}]:\n\n"
     text += f"👥 Участников: {len(participants)}\n\n"
-    text += "📋 **Список участников:**\n"
+    text += "📋 Список участников:\n"
     
     for i, (user_id, data) in enumerate(participants.items(), 1):
-        text += f"{i}. @{data['username']} – {data['number']}\n"
+        text += f"{i}. @{data['username']} - {data['number']}\n"
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    await update.message.reply_text(text)
 
 # ============= ИНФОРМАЦИОННЫЕ КОМАНДЫ =============
 
 async def gamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Информация об игровых командах для пользователей - /needgame /trygame /moregame"""
+    """Информация об игровых командах для пользователей"""
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
-    text = (
-        f"🎮 **ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:**\n\n"
-        f"**🎯 Угадай слово:**\n"
-        f"• `/{game_version}slovo слово` – попытка угадать\n"
-        f"• `/{game_version}info` – подсказка о слове\n\n"
-        f"**🎲 Розыгрыш номеров:**\n"
-        f"• `/{game_version}roll` – получить номер\n"
-        f"• `/{game_version}myroll` – мой номер\n\n"
-        f"**ℹ️ Правила:**\n"
-        f"• В игре 'угадай слово' есть интервал между попытками\n"
-        f"• В розыгрыше каждый получает уникальный номер 1-9999\n"
-        f"• Победители определяются администраторами"
-    )
+    text = f"🎮 ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:\n\n"
+    text += "🎯 Угадай слово:\n"
+    text += f"• /{game_version}slovo слово - попытка угадать\n"
+    text += f"• /{game_version}info - подсказка о слове\n\n"
+    text += "🎲 Розыгрыш номеров:\n"
+    text += f"• /{game_version}roll - получить номер\n"
+    text += f"• /{game_version}myroll - мой номер\n\n"
+    text += "ℹ️ Правила:\n"
+    text += "• В игре 'угадай слово' есть интервал между попытками\n"
+    text += "• В розыгрыше каждый получает уникальный номер 1-9999\n"
+    text += "• Победители определяются администраторами"
 
-    await update.message.reply_text(text, parse_mode='Markdown')
+    await update.message.reply_text(text)
 
 async def admgamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Информация об игровых командах для админов - /needguide /tryguide /moreguide"""
+    """Информация об игровых командах для админов"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -748,9 +583,128 @@ async def admgamesinfo_command(update: Update, context: ContextTypes.DEFAULT_TYP
     command_text = update.message.text
     game_version = get_game_version_from_command(command_text)
     
-    text = (
-        f"🔧 **АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:**\n\n"
-        f"**🎯 Управление словами:**\n"
-        f"• `/{game_version}add слово` – добавить слово\n"
-        f"• `/{game_version}edit слово описание` – изменить\n"
-        f"• `/{game_version}start` – запустить конкурс
+    text = f"🔧 АДМИНСКИЕ ИГРОВЫЕ КОМАНДЫ [{game_version.upper()}]:\n\n"
+    text += "🎯 Управление словами:\n"
+    text += f"• /{game_version}add слово\n"
+    text += f"• /{game_version}edit слово описание\n"
+    text += f"• /{game_version}start\n"
+    text += f"• /{game_version}stop\n"
+    text += f"• /{game_version}timeset минуты\n\n"
+    text += "🎲 Управление розыгрышем:\n"
+    text += f"• /{game_version}rollstart 1-5\n"
+    text += f"• /{game_version}reroll\n"
+    text += f"• /{game_version}rollstat"
+
+    await update.message.reply_text(text)
+
+async def anstimeset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Задать интервал между попытками"""
+    if not Config.is_admin(update.effective_user.id):
+        if update.effective_chat.type == 'private':
+            await update.message.reply_text("❌ У вас нет прав для использования этой команды")
+        return
+    
+    command_text = update.message.text
+    game_version = get_game_version_from_command(command_text)
+    
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(f"📝 Использование: /{game_version}timeset 60 (в минутах)")
+        return
+    
+    minutes = int(context.args[0])
+    
+    word_games[game_version]['interval'] = minutes
+    
+    await update.message.reply_text(
+        f"✅ Интервал обновлен [{game_version.upper()}]:\n\n"
+        f"⏰ Новый интервал: {minutes} минут"
+    )
+
+async def wordinfoedit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Изменить описание конкурса (админ)"""
+    if not Config.is_admin(update.effective_user.id):
+        if update.effective_chat.type == 'private':
+            await update.message.reply_text("❌ У вас нет прав для использования этой команды")
+        return
+    
+    command_text = update.message.text
+    game_version = get_game_version_from_command(command_text)
+    
+    if not context.args:
+        await update.message.reply_text(f"📝 Использование: /{game_version}infoedit новое описание")
+        return
+    
+    new_description = ' '.join(context.args)
+    
+    word_games[game_version]['description'] = new_description
+    
+    await update.message.reply_text(f"✅ Описание изменено [{game_version.upper()}]:\n\n{new_description}")
+
+async def handle_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка callback для игр"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data.split(":")
+    action = data[1] if len(data) > 1 else None
+    
+    if action == "skip_media":
+        game_version = data[2] if len(data) > 2 else None
+        word = data[3] if len(data) > 3 else None
+        
+        user_id = update.effective_user.id
+        if user_id in game_waiting:
+            game_waiting.pop(user_id)
+        
+        await query.edit_message_text(
+            f"✅ Слово добавлено [{game_version.upper()}]:\n\n"
+            f"📝 Слово: {word}\n\n"
+            f"Используйте /{game_version}start для запуска конкурса"
+        )
+    
+    elif action == "finish":
+        game_version = data[2] if len(data) > 2 else None
+        word = data[3] if len(data) > 3 else None
+        
+        user_id = update.effective_user.id
+        if user_id in game_waiting:
+            game_waiting.pop(user_id)
+        
+        media_count = len(word_games[game_version]['words'][word].get('media', []))
+        
+        await query.edit_message_text(
+            f"✅ Слово готово [{game_version.upper()}]:\n\n"
+            f"📝 Слово: {word}\n"
+            f"📸 Медиа: {media_count} файлов\n\n"
+            f"Используйте /{game_version}start для запуска конкурса"
+        )
+
+async def wordclear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Удалить слово (старая команда)"""
+    await update.message.reply_text(
+        "ℹ️ Команда переименована\n"
+        "Используйте новые команды с префиксами: /need, /try, /more\n"
+        "Например: /needguide, /tryguide, /moreguide для справки"
+    )
+
+__all__ = [
+    'wordadd_command',
+    'wordedit_command',
+    'wordclear_command',
+    'wordon_command',
+    'wordoff_command',
+    'wordinfo_command',
+    'wordinfoedit_command',
+    'anstimeset_command',
+    'gamesinfo_command',
+    'admgamesinfo_command',
+    'game_say_command',
+    'roll_participant_command',
+    'roll_draw_command',
+    'rollreset_command',
+    'rollstatus_command',
+    'mynumber_command',
+    'handle_game_text_input',
+    'handle_game_media_input',
+    'handle_game_callback'
+]
