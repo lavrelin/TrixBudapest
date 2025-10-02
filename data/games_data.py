@@ -2,27 +2,9 @@ from datetime import datetime
 from typing import Dict, Any
 import random
 
-# Система игры "Угадай слово"
+# Система игры "Угадай слово" - ОДНА ВЕРСИЯ
 word_games: Dict[str, Dict[str, Any]] = {
-    'play3xia': {
-        'words': {}, 
-        'current_word': None, 
-        'active': False, 
-        'winners': [], 
-        'interval': 60,
-        'description': 'Конкурс пока не активен',
-        'media_url': None
-    },
-    'play3x': {
-        'words': {}, 
-        'current_word': None, 
-        'active': False, 
-        'winners': [], 
-        'interval': 60,
-        'description': 'Конкурс пока не активен',
-        'media_url': None
-    },
-    'playxxx': {
+    'try': {
         'words': {}, 
         'current_word': None, 
         'active': False, 
@@ -33,25 +15,17 @@ word_games: Dict[str, Dict[str, Any]] = {
     }
 }
 
-# Система розыгрыша номеров
+# Система розыгрыша номеров - ОДНА ВЕРСИЯ
 roll_games: Dict[str, Dict[str, Any]] = {
-    'play3xia': {'participants': {}, 'active': True},
-    'play3x': {'participants': {}, 'active': True},
-    'playxxx': {'participants': {}, 'active': True}
+    'try': {'participants': {}, 'active': True}
 }
 
 # История попыток пользователей
 user_attempts: Dict[int, Dict[str, datetime]] = {}
 
 def get_game_version(command: str) -> str:
-    """Определяет версию игры по команде"""
-    if 'play3xia' in command:
-        return 'play3xia'
-    elif 'play3x' in command:
-        return 'play3x'
-    elif 'playxxx' in command:
-        return 'playxxx'
-    return 'play3xia'
+    """Определяет версию игры по команде - ВСЕГДА ВОЗВРАЩАЕТ 'try'"""
+    return 'try'
 
 def can_attempt(user_id: int, game_version: str) -> bool:
     """Проверяет интервал между попытками"""
@@ -84,7 +58,7 @@ def start_word_game(game_version: str) -> bool:
     word_games[game_version]['current_word'] = current_word
     word_games[game_version]['active'] = True
     word_games[game_version]['winners'] = []
-    word_games[game_version]['description'] = f"🎮 Конкурс активен! Угадайте слово используя /{game_version}say"
+    word_games[game_version]['description'] = f"🎮 Конкурс активен! Угадайте слово используя /slovo"
     return True
 
 def stop_word_game(game_version: str):
