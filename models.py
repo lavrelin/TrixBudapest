@@ -31,23 +31,24 @@ class Post(Base):
     __tablename__ = 'posts'
     
     id = Column(Integer, primary_key=True)
-    user_id = Column(BigInteger, nullable=False)  # ИЗМЕНЕНО: BigInteger для Telegram ID
+    user_id = Column(BigInteger, nullable=False)
     category = Column(String(255))
     subcategory = Column(String(255))
     text = Column(Text)
-    media = Column(JSON)
-    hashtags = Column(JSON)
+    media = Column(JSON, default=list)  # ИСПРАВЛЕНО: default=list
+    hashtags = Column(JSON, default=list)  # ИСПРАВЛЕНО: default=list
     anonymous = Column(Boolean, default=False)
     status = Column(Enum(PostStatus), default=PostStatus.PENDING)
-    moderation_message_id = Column(Integer)
+    moderation_message_id = Column(BigInteger)  # ИСПРАВЛЕНО: BigInteger для больших ID
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Piar specific fields
     is_piar = Column(Boolean, default=False)
-    piar_name = Column(String(255))
-    piar_profession = Column(String(255))
-    piar_districts = Column(JSON)
-    piar_phone = Column(String(255))
-    piar_instagram = Column(String(255))  
-    piar_telegram = Column(String(255))   
-    piar_price = Column(String(255))
+    piar_name = Column(String(255), nullable=True)
+    piar_profession = Column(String(255), nullable=True)
+    piar_districts = Column(JSON, default=list, nullable=True)
+    piar_phone = Column(String(255), nullable=True)
+    piar_instagram = Column(String(255), nullable=True)  
+    piar_telegram = Column(String(255), nullable=True)   
+    piar_price = Column(String(255), nullable=True)
+    piar_description = Column(Text, nullable=True)  # ДОБАВЛЕНО: отдельное поле для описания
