@@ -3,6 +3,8 @@
 
 import logging
 import asyncio
+import os
+import sqlite3
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
@@ -10,6 +12,23 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 from config import Config
+
+# Проверяем и очищаем пустую SQLite БД если есть
+db_path = "./trixbot.db"
+if os.path.exists(db_path):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        conn.close()
+        
+        if not tables:
+            print(f"⚠️ Found empty database, removing: {db_path}")
+            os.remove(db_path)
+            print("✅ Empty database removed")
+    except Exception as e:
+        print(f"⚠️ Error checking database: {e}")
 
 # Import handlers
 from handlers.start_handler import start_command, help_command
@@ -74,11 +93,26 @@ async def init_db_tables():
     """Initialize database tables"""
     try:
         logger.info("🔄 Initializing database...")
+        
+        # Проверяем тип БД
+        db_url = Config.DATABASE_URL
+        if db_url.startswith('postgres'):
+            logger.info("📊 Using PostgreSQL database")
+        else:
+            logger.info("📊 Using SQLite database")
+        
+        # Импортируем models чтобы зарегистрировать все таблицы
+        from models import Base, User, Post
+        logger.info(f"✅ Loaded models: User, Post")
+        
+        # Инициализируем БД
         await db.init()
+        
         logger.info("✅ Database initialized successfully")
         return True
+        
     except Exception as e:
-        logger.error(f"❌ Database initialization error: {e}")
+        logger.error(f"❌ Database initialization error: {e}", exc_info=True)
         logger.warning("⚠️ Bot will continue without database")
         return False
 
@@ -198,7 +232,7 @@ async def error_handler(update: object, context):
 def main():
     """Главная функция запуска бота"""
     if not Config.BOT_TOKEN:
-        logger.error("BOT_TOKEN not found!")
+        logger.error("❌ BOT_TOKEN not found!")
         return
     
     # Создаем event loop
@@ -207,10 +241,16 @@ def main():
     
     # Инициализируем базу данных
     logger.info("🚀 Starting TrixBot initialization...")
+    print("🚀 Starting TrixBot...")
+    print(f"📊 Database URL: {Config.DATABASE_URL[:30]}...")
+    
     db_initialized = loop.run_until_complete(init_db_tables())
     
     if not db_initialized:
         logger.warning("⚠️ Bot starting without database functionality")
+        print("⚠️ Database not available - bot running in limited mode")
+    else:
+        print("✅ Database connected and initialized")
     
     # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
@@ -220,7 +260,7 @@ def main():
     admin_notifications.set_bot(application.bot)
     stats_scheduler.set_admin_notifications(admin_notifications)
     
-    logger.info("Services initialized")
+    logger.info("✅ Services initialized")
     
     # ========== ОСНОВНЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("start", start_command))
@@ -341,23 +381,32 @@ def main():
     # Запуск автопостинга и статистики
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
-        logger.info("Autopost service scheduled")
+        logger.info("✅ Autopost service scheduled")
+        print("✅ Autopost service enabled")
+    else:
+        print("⚪ Autopost service disabled")
     
     # Запуск планировщика статистики
     loop.create_task(stats_scheduler.start())
-    logger.info("Stats scheduler scheduled")
+    logger.info("✅ Stats scheduler scheduled")
+    print("✅ Stats scheduler enabled")
     
     # Запуск бота
-    logger.info("🤖 TrixBot starting...")
-    print("🤖 TrixBot starting...")
-    print(f"📊 Stats will be sent every {Config.STATS_INTERVAL_HOURS} hours to group {Config.ADMIN_GROUP_ID}")
-    print(f"📢 Moderation notifications go to: {Config.MODERATION_GROUP_ID}")
-    print(f"🔧 Admin notifications go to: {Config.ADMIN_GROUP_ID}")
+    logger.info("🤖 TrixBot starting polling...")
+    print("\n" + "="*50)
+    print("🤖 TRIXBOT IS READY!")
+    print("="*50)
+    print(f"📊 Stats interval: {Config.STATS_INTERVAL_HOURS} hours")
+    print(f"📢 Moderation group: {Config.MODERATION_GROUP_ID}")
+    print(f"🔧 Admin group: {Config.ADMIN_GROUP_ID}")
+    print(f"⏰ Cooldown: {Config.COOLDOWN_SECONDS // 3600} hours")
     
     if db_initialized:
-        print("✅ Database: Connected")
+        print(f"💾 Database: ✅ Connected")
     else:
-        print("⚠️ Database: Not available (bot running in limited mode)")
+        print(f"💾 Database: ⚠️ Limited mode")
+    
+    print("="*50 + "\n")
     
     application.run_polling(allowed_updates=["message", "callback_query"])
 
