@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacksSettings]
+buildCommand = "pip install --no-cache-dir -r requirements.txt"
+
+[deploy]
+startCommand = "python main.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
