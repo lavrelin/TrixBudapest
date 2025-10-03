@@ -42,7 +42,8 @@ from handlers.advanced_moderation import (
     tagall_command, admins_command
 )
 from handlers.admin_handler import (
-    admin_command, say_command, handle_admin_callback, broadcast_command
+    admin_command, say_command, handle_admin_callback, 
+    broadcast_command, sendstats_command
 )
 from handlers.autopost_handler import autopost_command, autopost_test_command
 from handlers.games_handler import (
@@ -52,10 +53,12 @@ from handlers.games_handler import (
     gamesinfo_command, admgamesinfo_command, game_say_command,
     roll_participant_command, roll_draw_command,
     rollreset_command, rollstatus_command, mynumber_command,
-    handle_game_text_input, handle_game_media_input
+    handle_game_text_input, handle_game_media_input, handle_game_callback
 )
 from handlers.medicine_handler import hp_command, handle_hp_callback
 from services.autopost_service import autopost_service
+from services.admin_notifications import admin_notifications
+from services.stats_scheduler import stats_scheduler
 from services.db import db
 
 load_dotenv()
@@ -93,7 +96,6 @@ async def handle_all_callbacks(update: Update, context):
         elif handler_type == "profile":
             await handle_profile_callback(update, context)
         elif handler_type == "game":
-            from handlers.games_handler import handle_game_callback
             await handle_game_callback(update, context)
         elif handler_type == "hp":
             await handle_hp_callback(update, context)
@@ -190,8 +192,12 @@ def main():
     # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
     
-    # Настройка автопостинга
+    # Настройка сервисов
     autopost_service.set_bot(application.bot)
+    admin_notifications.set_bot(application.bot)
+    stats_scheduler.set_admin_notifications(admin_notifications)
+    
+    logger.info("Services initialized")
     
     # ========== ОСНОВНЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("start", start_command))
@@ -209,6 +215,7 @@ def main():
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("say", say_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
+    application.add_handler(CommandHandler("sendstats", sendstats_command))
     
     # ========== ССЫЛКИ ==========
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
@@ -320,15 +327,25 @@ def main():
     # Обработчик ошибок
     application.add_error_handler(error_handler)
     
-    # Запуск автопостинга
+    # Запуск автопостинга и статистики
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
+        logger.info("Autopost service scheduled")
+    
+    # Запуск планировщика статистики
+    loop.create_task(stats_scheduler.start())
+    logger.info("Stats scheduler scheduled")
     
     # Запуск бота
     logger.info("🤖 TrixBot starting...")
     print("🤖 TrixBot starting...")
+    print(f"📊 Stats will be sent every {Config.STATS_INTERVAL_HOURS} hours to group {Config.ADMIN_GROUP_ID}")
+    print(f"📢 Moderation notifications go to: {Config.MODERATION_GROUP_ID}")
+    print(f"🔧 Admin notifications go to: {Config.ADMIN_GROUP_ID}")
+    
     application.run_polling(allowed_updates=["message", "callback_query"])
 
 if __name__ == '__main__':
