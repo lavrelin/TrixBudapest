@@ -144,21 +144,72 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "📝 **Использование:**\n"
-            "`/mute @username время`\n\n"
-            "Время указывается в формате:\n"
-            "• `10m` - 10 минут\n"
-            "• `2h` - 2 часа\n"
-            "• `1d` - 1 день\n"
-            "• `7d` - 7 дней",
-            parse_mode='Markdown'
-        )
-        return
+    # Удаляем команду из чата
+    try:
+        await update.message.delete()
+    except:
+        pass
     
-    target = context.args[0]
-    time_str = context.args[1]
+    # Проверяем, это reply на сообщение или команда с аргументами
+    target_user = None
+    time_str = None
+    
+    if update.message.reply_to_message:
+        # Если это reply, берем пользователя из сообщения
+        target_user = update.message.reply_to_message.from_user
+        target_id = target_user.id
+        
+        # Время берем из аргументов
+        if context.args:
+            time_str = context.args[0]
+        else:
+            time_str = "10m"  # По умолчанию 10 минут
+    else:
+        # Если не reply, нужны аргументы
+        if len(context.args) < 2:
+            msg = await update.message.reply_text(
+                "📝 **Использование:**\n"
+                "• Ответьте на сообщение: `/mute 10m`\n"
+                "• Или укажите: `/mute @username 10m`\n\n"
+                "Время указывается в формате:\n"
+                "• `10m` - 10 минут\n"
+                "• `2h` - 2 часа\n"
+                "• `1d` - 1 день\n"
+                "• `7d` - 7 дней",
+                parse_mode='Markdown'
+            )
+            # Удаляем сообщение через 10 секунд
+            await asyncio.sleep(10)
+            try:
+                await msg.delete()
+            except:
+                pass
+            return
+        
+        target = context.args[0]
+        time_str = context.args[1]
+        
+        # Получаем информацию о пользователе
+        user_info = None
+        target_id = None
+        
+        if target.startswith('@'):
+            username = target[1:]
+            user_info = get_user_by_username(username)
+            if user_info:
+                target_id = user_info['id']
+        elif target.isdigit():
+            target_id = int(target)
+            user_info = get_user_by_id(target_id)
+        
+        if not user_info:
+            msg = await update.message.reply_text("❌ Пользователь не найден")
+            await asyncio.sleep(5)
+            try:
+                await msg.delete()
+            except:
+                pass
+            return
     
     # Парсим время
     try:
@@ -169,33 +220,38 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif time_str.endswith('d'):
             seconds = int(time_str[:-1]) * 86400
         else:
-            await update.message.reply_text("❌ Неверный формат времени")
+            msg = await update.message.reply_text("❌ Неверный формат времени")
+            await asyncio.sleep(5)
+            try:
+                await msg.delete()
+            except:
+                pass
             return
     except ValueError:
-        await update.message.reply_text("❌ Неверный формат времени")
-        return
-    
-    # Получаем информацию о пользователе
-    user_info = None
-    target_id = None
-    
-    if target.startswith('@'):
-        username = target[1:]
-        user_info = get_user_by_username(username)
-        if user_info:
-            target_id = user_info['id']
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if not user_info:
-        await update.message.reply_text("❌ Пользователь не найден")
+        msg = await update.message.reply_text("❌ Неверный формат времени")
+        await asyncio.sleep(5)
+        try:
+            await msg.delete()
+        except:
+            pass
         return
     
     # Проверка на мут админа или модератора
     if Config.is_moderator(target_id):
-        await update.message.reply_text("❌ Нельзя замутить модератора или администратора")
+        msg = await update.message.reply_text("❌ Нельзя замутить модератора или администратора")
+        await asyncio.sleep(5)
+        try:
+            await msg.delete()
+        except:
+            pass
         return
+    
+    # Получаем данные пользователя
+    if target_user:
+        username = target_user.username or f"ID_{target_id}"
+    else:
+        user_info = get_user_by_id(target_id)
+        username = user_info['username'] if user_info else f"ID_{target_id}"
     
     # Мутим пользователя
     mute_until = datetime.now() + timedelta(seconds=seconds)
@@ -203,22 +259,35 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Отправляем уведомление в админскую группу
     await admin_notifications.notify_mute(
-        username=user_info['username'],
+        username=username,
         user_id=target_id,
         duration=time_str,
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
     
-    # Отправляем результат
-    result_text = (
-        f"🔇 **Пользователь замучен:**\n\n"
-        f"👤 @{user_info['username']} (ID: {target_id})\n"
-        f"⏱️ Длительность: {time_str}\n"
-        f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}"
-    )
-    
-    await update.message.reply_text(result_text, parse_mode='Markdown')
+    # Отправляем подтверждение модератору в личку (если возможно)
+    try:
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=(
+                f"🔇 **Пользователь замучен:**\n\n"
+                f"👤 @{username} (ID: {target_id})\n"
+                f"⏱️ Длительность: {time_str}\n"
+                f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}"
+            ),
+            parse_mode='Markdown'
+        )
+    except:
+        # Если нельзя отправить в личку, отправляем в чат и удаляем через 5 секунд
+        msg = await update.message.reply_text(
+            f"🔇 @{username} замучен на {time_str}",
+            parse_mode='Markdown'
+        )
+        await asyncio.sleep(5)
+        try:
+            await msg.delete()
+        except:
+            pass
     
     logger.info(f"User {target_id} muted by {update.effective_user.id} for {time_str}")
 
