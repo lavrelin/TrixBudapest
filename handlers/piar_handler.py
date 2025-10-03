@@ -403,32 +403,38 @@ async def send_piar_to_moderation(update: Update, context: ContextTypes.DEFAULT_
                 )
                 return
             
-            # Create piar post without new fields first
+            # ИСПРАВЛЕНО: Безопасное создание поста с проверкой всех полей
             post_data = {
-                'user_id': user_id,
+                'user_id': int(user_id),  # Явно int
                 'category': '🙅 Каталог Услуг',
-                'text': data.get('description', ''),
+                'text': str(data.get('description', ''))[:1000],  # Обрезаем до 1000 символов
                 'hashtags': ['#Услуги', '#КаталогУслуг'],
                 'is_piar': True,
-                'piar_name': data.get('name'),
-                'piar_profession': data.get('profession'),
-                'piar_districts': data.get('districts'),
-                'piar_phone': data.get('phone'),
-                'piar_price': data.get('price'),
-                'media': data.get('media', [])
+                'piar_name': str(data.get('name', ''))[:100] if data.get('name') else None,
+                'piar_profession': str(data.get('profession', ''))[:100] if data.get('profession') else None,
+                'piar_districts': list(data.get('districts', [])) if data.get('districts') else [],
+                'piar_phone': str(data.get('phone', ''))[:50] if data.get('phone') else None,
+                'piar_price': str(data.get('price', ''))[:100] if data.get('price') else None,
+                'piar_instagram': str(data.get('instagram', ''))[:100] if data.get('instagram') else None,
+                'piar_telegram': str(data.get('telegram', ''))[:100] if data.get('telegram') else None,
+                'piar_description': str(data.get('description', ''))[:1000] if data.get('description') else None,
+                'media': list(data.get('media', [])) if data.get('media') else [],
+                'anonymous': False,
+                'status': PostStatus.PENDING
             }
             
-            # Safely add new fields if they exist in DB
-            try:
-                post_data['piar_instagram'] = data.get('instagram')
-                post_data['piar_telegram'] = data.get('telegram')
-            except Exception as field_error:
-                logger.warning(f"New piar fields not available: {field_error}")
-                # Continue without new fields
-            
+            # Создаем пост
             post = Post(**post_data)
             session.add(post)
+            await session.flush()  # ИСПРАВЛЕНО: flush вместо commit для получения ID
+            
+            post_id = post.id  # Сохраняем ID
+            logger.info(f"Created piar post with ID: {post_id}")
+            
             await session.commit()
+            
+            # Обновляем post из сессии
+            await session.refresh(post)
             
             # Send to moderation group
             await send_piar_to_mod_group_safe(update, context, post, user, data)
