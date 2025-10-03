@@ -70,6 +70,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+async def init_db_tables():
+    """Initialize database tables"""
+    try:
+        logger.info("🔄 Initializing database...")
+        await db.init()
+        logger.info("✅ Database initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Database initialization error: {e}")
+        logger.warning("⚠️ Bot will continue without database")
+        return False
+
 async def handle_all_callbacks(update: Update, context):
     """Роутер для всех callback запросов"""
     query = update.callback_query
@@ -189,6 +201,17 @@ def main():
         logger.error("BOT_TOKEN not found!")
         return
     
+    # Создаем event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Инициализируем базу данных
+    logger.info("🚀 Starting TrixBot initialization...")
+    db_initialized = loop.run_until_complete(init_db_tables())
+    
+    if not db_initialized:
+        logger.warning("⚠️ Bot starting without database functionality")
+    
     # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
     
@@ -303,19 +326,7 @@ def main():
     # СТАРЫЕ КОМАНДЫ (для обратной совместимости - работают как TRY)
     application.add_handler(CommandHandler("add", wordadd_command))
     application.add_handler(CommandHandler("edit", wordedit_command))
-    application.add_handler(CommandHandler("start", wordon_command))
-    application.add_handler(CommandHandler("stop", wordoff_command))
-    application.add_handler(CommandHandler("info", wordinfo_command))
-    application.add_handler(CommandHandler("infoedit", wordinfoedit_command))
-    application.add_handler(CommandHandler("timeset", anstimeset_command))
-    application.add_handler(CommandHandler("game", gamesinfo_command))
-    application.add_handler(CommandHandler("guide", admgamesinfo_command))
-    application.add_handler(CommandHandler("slovo", game_say_command))
-    application.add_handler(CommandHandler("roll", roll_participant_command))
-    application.add_handler(CommandHandler("rollstart", roll_draw_command))
-    application.add_handler(CommandHandler("reroll", rollreset_command))
-    application.add_handler(CommandHandler("rollstat", rollstatus_command))
-    application.add_handler(CommandHandler("myroll", mynumber_command))
+    application.add_handler(CommandHandler("wordclear", wordclear_command))
     
     # ========== ОБРАБОТЧИКИ CALLBACK И СООБЩЕНИЙ ==========
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
@@ -328,9 +339,6 @@ def main():
     application.add_error_handler(error_handler)
     
     # Запуск автопостинга и статистики
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
         logger.info("Autopost service scheduled")
@@ -345,6 +353,11 @@ def main():
     print(f"📊 Stats will be sent every {Config.STATS_INTERVAL_HOURS} hours to group {Config.ADMIN_GROUP_ID}")
     print(f"📢 Moderation notifications go to: {Config.MODERATION_GROUP_ID}")
     print(f"🔧 Admin notifications go to: {Config.ADMIN_GROUP_ID}")
+    
+    if db_initialized:
+        print("✅ Database: Connected")
+    else:
+        print("⚠️ Database: Not available (bot running in limited mode)")
     
     application.run_polling(allowed_updates=["message", "callback_query"])
 
