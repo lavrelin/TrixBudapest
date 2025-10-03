@@ -2,6 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from config import Config
 from data.user_data import update_user_activity
+from services.admin_notifications import admin_notifications
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     from data.user_data import get_user_by_username, get_user_by_id
+    from datetime import datetime
     
     target = context.args[0]
     user_data = None
@@ -44,15 +46,16 @@ async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data = get_user_by_id(user_id)
     
     if user_data:
-        text = f"""👤 **Информация о пользователе:**
-
-🆔 ID: `{user_data['id']}`
-👤 Username: @{user_data['username']}
-📅 Присоединился: {user_data['join_date'].strftime('%d.%m.%Y %H:%M')}
-⏰ Последняя активность: {user_data['last_activity'].strftime('%d.%m.%Y %H:%M')}
-💬 Сообщений: {user_data['message_count']}
-🚫 Статус бана: {'Забанен' if user_data.get('banned') else 'Активен'}
-🔇 Мут: {'Да' if user_data.get('muted_until') and user_data['muted_until'] > datetime.now() else 'Нет'}"""
+        text = (
+            f"👤 **Информация о пользователе:**\n\n"
+            f"🆔 ID: `{user_data['id']}`\n"
+            f"👤 Username: @{user_data['username']}\n"
+            f"📅 Присоединился: {user_data['join_date'].strftime('%d.%m.%Y %H:%M')}\n"
+            f"⏰ Последняя активность: {user_data['last_activity'].strftime('%d.%m.%Y %H:%M')}\n"
+            f"💬 Сообщений: {user_data['message_count']}\n"
+            f"🚫 Статус бана: {'Забанен' if user_data.get('banned') else 'Активен'}\n"
+            f"🔇 Мут: {'Да' if user_data.get('muted_until') and user_data['muted_until'] > datetime.now() else 'Нет'}"
+        )
     else:
         text = "❌ Пользователь не найден"
     
@@ -61,6 +64,7 @@ async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Присоединиться к розыгрышу"""
     from data.user_data import is_user_banned, lottery_participants
+    from datetime import datetime
     
     user_id = update.effective_user.id
     username = update.effective_user.username or f"ID_{user_id}"
@@ -72,7 +76,7 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if user_id in lottery_participants:
-        await update.message.reply_text(f"🎲 @{username}, вы уже участвуете в розыгрыше!")
+        await update.message.reply_text("✅ Вы уже участвуете в розыгрыше!")
         return
     
     lottery_participants[user_id] = {
@@ -82,58 +86,64 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"🎉 @{username}, вы успешно присоединились к розыгрышу!\n"
-        f"👥 Участников: {len(lottery_participants)}"
+        f"👥 Всего участников: {len(lottery_participants)}"
     )
 
 async def participants_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список участников розыгрыша"""
+    """Список участников розыгрыша (модераторы)"""
+    if not Config.is_moderator(update.effective_user.id):
+        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
+        return
+    
     from data.user_data import lottery_participants
     
     if not lottery_participants:
-        await update.message.reply_text("🎲 Пока нет участников розыгрыша")
+        await update.message.reply_text("📊 Нет участников розыгрыша")
         return
     
-    text = f"👥 **Участники розыгрыша ({len(lottery_participants)}):**\n\n"
+    text = f"📊 **Участники розыгрыша:** {len(lottery_participants)}\n\n"
     
     for i, (user_id, data) in enumerate(lottery_participants.items(), 1):
-        text += f"{i}. @{data['username']}\n"
+        text += f"{i}. @{data['username']} (ID: {user_id})\n"
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пожаловаться на пользователя"""
+    """Отправить жалобу модераторам"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or f"ID_{user_id}"
+    
+    update_user_activity(user_id, update.effective_user.username)
+    
     if not context.args:
-        await update.message.reply_text("📝 Использование: `/report @username причина`", parse_mode='Markdown')
+        await update.message.reply_text(
+            "📝 **Использование:**\n"
+            "`/report @username причина` или\n"
+            "`/report причина жалобы`",
+            parse_mode='Markdown'
+        )
         return
     
-    target = context.args[0]
-    reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+    # Проверяем, указан ли пользователь
+    if context.args[0].startswith('@'):
+        target = context.args[0]
+        reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+    else:
+        target = "Общая жалоба"
+        reason = ' '.join(context.args)
     
-    reporter = update.effective_user
-    update_user_activity(reporter.id, reporter.username)
-    
-    from datetime import datetime
-    
-    report_text = (
-        f"🚨 **Новая жалоба:**\n\n"
-        f"👤 От: @{reporter.username or 'без_username'} (ID: {reporter.id})\n"
-        f"🎯 На: {target}\n"
-        f"📝 Причина: {reason}\n"
-        f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    # Отправляем уведомление в админскую группу через сервис
+    await admin_notifications.notify_report(
+        reporter=username,
+        reporter_id=user_id,
+        target=target,
+        reason=reason
     )
     
-    try:
-        await context.bot.send_message(
-            chat_id=Config.MODERATION_GROUP_ID,
-            text=report_text,
-            parse_mode='Markdown'
-        )
-        
-        await update.message.reply_text(
-            "✅ **Жалоба отправлена!**\n\nМодераторы рассмотрят вашу жалобу в ближайшее время.",
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error sending report: {e}")
-        await update.message.reply_text("❌ Ошибка отправки жалобы")
+    # Подтверждение пользователю
+    await update.message.reply_text(
+        "✅ Ваша жалоба отправлена модераторам.\n"
+        "Спасибо за бдительность!"
+    )
+    
+    logger.info(f"Report from {username} (ID: {user_id}) about {target}: {reason}")
