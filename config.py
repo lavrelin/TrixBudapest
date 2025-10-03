@@ -15,7 +15,8 @@ class Config:
     
     # Основные каналы
     TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID", "-1002743668534"))
-    MODERATION_GROUP_ID = int(os.getenv("MODERATION_GROUP_ID", "-1002734837434"))
+    MODERATION_GROUP_ID = int(os.getenv("MODERATION_GROUP_ID", "-1002734837434"))  # Группа для заявок на публикацию
+    ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "-4843909295"))  # Группа для администраторов (уведомления)
     CHAT_FOR_ACTUAL = int(os.getenv("CHAT_FOR_ACTUAL", "-1002734837434"))
     
     # Дополнительные каналы
@@ -47,6 +48,10 @@ class Config:
     SCHEDULER_MIN_INTERVAL = int(os.getenv("SCHEDULER_MIN", "120"))
     SCHEDULER_MAX_INTERVAL = int(os.getenv("SCHEDULER_MAX", "160"))
     SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
+    
+    # ============= СТАТИСТИКА =============
+    
+    STATS_INTERVAL_HOURS = int(os.getenv("STATS_INTERVAL_HOURS", "8"))  # Каждые 8 часов
     
     # ============= СООБЩЕНИЯ ПО УМОЛЧАНИЮ =============
     
@@ -97,7 +102,42 @@ class Config:
         if not cls.ADMIN_IDS:
             errors.append("⚠️ ADMIN_IDS не заданы")
         
+        if cls.ADMIN_GROUP_ID == cls.MODERATION_GROUP_ID:
+            errors.append("⚠️ ADMIN_GROUP_ID и MODERATION_GROUP_ID совпадают (рекомендуется разделить)")
+        
         return errors
+    
+    @classmethod
+    def get_info(cls) -> str:
+        """Возвращает информацию о конфигурации"""
+        return f"""
+📋 КОНФИГУРАЦИЯ БОТА
+
+🤖 Основное:
+• Bot Token: {'✅ Установлен' if cls.BOT_TOKEN else '❌ Не установлен'}
+
+📢 Группы и каналы:
+• Канал публикаций: {cls.TARGET_CHANNEL_ID}
+• Группа модерации (заявки): {cls.MODERATION_GROUP_ID}
+• Группа администрирования: {cls.ADMIN_GROUP_ID}
+• Актуальное: {cls.CHAT_FOR_ACTUAL}
+• Торговый канал: {cls.TRADE_CHANNEL_ID}
+
+👑 Права доступа:
+• Администраторов: {len(cls.ADMIN_IDS)}
+• Модераторов: {len(cls.MODERATOR_IDS)}
+
+⚙️ Настройки:
+• Кулдаун: {cls.COOLDOWN_SECONDS // 3600}ч
+• Автопостинг: {'✅ Включен' if cls.SCHEDULER_ENABLED else '❌ Выключен'}
+• Интервал автопоста: {cls.SCHEDULER_MIN_INTERVAL}-{cls.SCHEDULER_MAX_INTERVAL} мин
+• Статистика каждые: {cls.STATS_INTERVAL_HOURS}ч
+
+📊 Лимиты:
+• Макс. фото (пиар): {cls.MAX_PHOTOS_PIAR}
+• Макс. районов (пиар): {cls.MAX_DISTRICTS_PIAR}
+• Макс. длина сообщения: {cls.MAX_MESSAGE_LENGTH}
+"""
 
 # Проверяем конфигурацию при импорте
 if __name__ != "__main__":
@@ -106,3 +146,5 @@ if __name__ != "__main__":
         print("🚨 Ошибки конфигурации:")
         for error in config_errors:
             print(f"  {error}")
+    else:
+        print("✅ Конфигурация валидна")
