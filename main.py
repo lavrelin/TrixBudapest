@@ -89,6 +89,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import logging
+from config import Config
+from db import db
+
+logger = logging.getLogger(__name__)
+
 async def init_db_tables():
     """Initialize database tables"""
     try:
@@ -111,8 +117,8 @@ async def init_db_tables():
         
         # КРИТИЧЕСКИ ВАЖНО: Импортируем models ДО инициализации БД
         from models import Base, User, Post, Gender, PostStatus
-        logger.info(f"✅ Loaded models: User, Post, Gender, PostStatus")
-        print(f"✅ Loaded models: User, Post")
+        logger.info("✅ Loaded models: User, Post, Gender, PostStatus")
+        print("✅ Loaded models: User, Post")
         
         # Инициализируем БД - это создаст таблицы
         await db.init()
