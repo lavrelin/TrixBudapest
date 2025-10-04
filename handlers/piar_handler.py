@@ -390,6 +390,14 @@ async def send_piar_to_moderation(update: Update, context: ContextTypes.DEFAULT_
     data = context.user_data.get('piar_data', {})
     
     try:
+        # ИСПРАВЛЕНО: проверяем доступность БД
+        if not db.session_maker:
+            logger.error("Database not available for piar")
+            await update.callback_query.edit_message_text(
+                "🚨 База данных недоступна. Попробуйте позже или обратитесь к администратору @trixilvebot"
+            )
+            return
+        
         async with db.get_session() as session:
             # Get user
             result = await session.execute(
@@ -398,8 +406,9 @@ async def send_piar_to_moderation(update: Update, context: ContextTypes.DEFAULT_
             user = result.scalar_one_or_none()
             
             if not user:
+                logger.warning(f"User {user_id} not found for piar")
                 await update.callback_query.edit_message_text(
-                    "🚨 Ошибка при отправке. Попробуйте еще раз /start При повторной неудаче обратитесь к администратору *@trixilvebot*🆘 "
+                    "🚨 Пользователь не найден. Попробуйте /start для регистрации."
                 )
                 return
             
