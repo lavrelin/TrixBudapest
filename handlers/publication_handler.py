@@ -358,7 +358,7 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
                 return
             
-            # ИСПРАВЛЕНИЕ: проверяем кулдаун правильно - с await
+            # Проверка кулдауна
             from services.cooldown import CooldownService
             cooldown_service = CooldownService()
             
@@ -366,7 +366,6 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 can_post, remaining_seconds = await cooldown_service.can_post(user_id)
             except Exception as cooldown_error:
                 logger.warning(f"Cooldown check failed: {cooldown_error}, using fallback")
-                # Fallback to simple check
                 can_post = cooldown_service.simple_can_post(user_id)
                 remaining_seconds = cooldown_service.get_remaining_time(user_id)
             
@@ -377,30 +376,38 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
                 return
             
-            # Create post
-            post = Post(
-                user_id=user_id,
-                category=post_data.get('category'),
-                subcategory=post_data.get('subcategory'),
-                text=post_data.get('text'),
-                hashtags=post_data.get('hashtags', []),
-                anonymous=post_data.get('anonymous', False),
-                media=post_data.get('media', [])
-            )
+            # ✅ Исправленное создание поста
+            create_post_data = {
+                'user_id': int(user_id),
+                'category': str(post_data.get('category', ''))[:255] if post_data.get('category') else None,
+                'subcategory': str(post_data.get('subcategory', ''))[:255] if post_data.get('subcategory') else None,
+                'text': str(post_data.get('text', ''))[:4096] if post_data.get('text') else None,
+                'hashtags': list(post_data.get('hashtags', [])),
+                'anonymous': bool(post_data.get('anonymous', False)),
+                'media': list(post_data.get('media', [])),
+                'status': PostStatus.PENDING,
+                'is_piar': False
+            }
             
+            post = Post(**create_post_data)
             session.add(post)
-            await session.commit()
+            await session.flush()  # нужно для получения post.id до коммита
+            post_id = post.id
+            logger.info(f"Created post with ID: {post_id}")
             
-            # Send to moderation
+            await session.commit()
+            await session.refresh(post)  # обновляем объект после коммита
+            
+            # Отправляем пост в группу модерации
             await send_to_moderation_group(update, context, post, user)
             
-            # Update cooldown
+            # Обновляем кулдаун
             try:
                 await cooldown_service.update_cooldown(user_id)
             except Exception:
-                cooldown_service.set_last_post_time(user_id)  # Fallback
+                cooldown_service.set_last_post_time(user_id)  # fallback
             
-            # Clear user data
+            # Чистим данные пользователя
             context.user_data.pop('post_data', None)
             context.user_data.pop('waiting_for', None)
             
