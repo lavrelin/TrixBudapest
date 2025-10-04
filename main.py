@@ -75,9 +75,16 @@ from handlers.games_handler import (
     handle_game_text_input, handle_game_media_input, handle_game_callback
 )
 from handlers.medicine_handler import hp_command, handle_hp_callback
+from handlers.stats_commands import (
+    channelstats_command, fullstats_command, 
+    resetmsgcount_command, chatinfo_command
+)
+
+# Import services
 from services.autopost_service import autopost_service
 from services.admin_notifications import admin_notifications
 from services.stats_scheduler import stats_scheduler
+from services.channel_stats import channel_stats
 from services.db import db
 
 load_dotenv()
@@ -87,12 +94,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
-
-import logging
-from config import Config
-from db import db
-
 logger = logging.getLogger(__name__)
 
 async def init_db_tables():
@@ -237,9 +238,14 @@ async def handle_all_callbacks(update: Update, context):
         except:
             pass
 
-async def handle_messages(update: Update, context):
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главный обработчик сообщений"""
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # НОВОЕ: Подсчитываем сообщения в отслеживаемых чатах
+    if chat_id in Config.STATS_CHANNELS.values():
+        channel_stats.increment_message_count(chat_id)
     
     # Проверяем waiting_for для специальных состояний
     waiting_for = context.user_data.get('waiting_for')
@@ -340,6 +346,7 @@ def main():
     # Настройка сервисов
     autopost_service.set_bot(application.bot)
     admin_notifications.set_bot(application.bot)
+    channel_stats.set_bot(application.bot)
     stats_scheduler.set_admin_notifications(admin_notifications)
     
     logger.info("✅ Services initialized")
@@ -361,6 +368,12 @@ def main():
     application.add_handler(CommandHandler("say", say_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("sendstats", sendstats_command))
+    
+    # ========== СТАТИСТИКА КАНАЛОВ ==========
+    application.add_handler(CommandHandler("channelstats", channelstats_command))
+    application.add_handler(CommandHandler("fullstats", fullstats_command))
+    application.add_handler(CommandHandler("resetmsgcount", resetmsgcount_command))
+    application.add_handler(CommandHandler("chatinfo", chatinfo_command))
     
     # ========== ССЫЛКИ ==========
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
