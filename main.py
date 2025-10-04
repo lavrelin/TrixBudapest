@@ -240,6 +240,38 @@ async def handle_all_callbacks(update: Update, context):
             await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
         except:
             pass
+            
+async def command_middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Middleware для обработки команд в чате"""
+    # Проверяем, является ли это командой
+    if update.message and update.message.text and update.message.text.startswith('/'):
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        # Если команда в Будапешт чате - удаляем
+        if chat_id == Config.CHAT_FOR_ACTUAL:
+            try:
+                await update.message.delete()
+                logger.info(f"Deleted command from Budapest chat: {update.message.text}")
+            except Exception as e:
+                logger.error(f"Failed to delete command: {e}")
+        
+        # Проверяем бан пользователя
+        from data.user_data import is_user_banned
+        if is_user_banned(user_id):
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="🚫 Вы заблокированы и не можете использовать бота"
+                )
+            except:
+                pass
+            return  # Блокируем выполнение
+    
+    # Продолжаем обработку
+    return
+
+# Добавьте эту функцию в main() ПЕРЕД application.add_handler(MessageHandler(...))
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главный обработчик сообщений"""
