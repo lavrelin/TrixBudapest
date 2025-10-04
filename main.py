@@ -93,6 +93,7 @@ async def init_db_tables():
     """Initialize database tables"""
     try:
         logger.info("🔄 Initializing database...")
+        print("🔄 Initializing database...")
         
         # Проверяем тип БД
         db_url = Config.DATABASE_URL
@@ -106,37 +107,82 @@ async def init_db_tables():
             print("📊 Using SQLite database")
         else:
             logger.warning(f"⚠️ Unknown database type: {db_url[:20]}...")
-            print(f"⚠️ Unknown database type")
+            print(f"⚠️ Unknown database type: {db_url[:20]}...")
         
-        # Импортируем models чтобы зарегистрировать все таблицы
-        from models import Base, User, Post
-        logger.info(f"✅ Loaded models: User, Post")
+        # КРИТИЧЕСКИ ВАЖНО: Импортируем models ДО инициализации БД
+        from models import Base, User, Post, Gender, PostStatus
+        logger.info(f"✅ Loaded models: User, Post, Gender, PostStatus")
+        print(f"✅ Loaded models: User, Post")
         
-        # Инициализируем БД
+        # Инициализируем БД - это создаст таблицы
         await db.init()
         
         # ИСПРАВЛЕНО: проверяем успешность инициализации
         if db.engine is None or db.session_maker is None:
             logger.error("❌ Database initialization failed - engine or session_maker is None")
-            print("❌ Database initialization FAILED")
+            print("❌ Database initialization FAILED - no engine/session_maker")
             return False
         
-        # Пытаемся создать тестовую сессию
+        logger.info("✅ Database engine and session_maker created")
+        print("✅ Database engine and session_maker created")
+        
+        # НОВОЕ: Явно создаём все таблицы
         try:
-            async with db.get_session() as session:
-                # Простой тестовый запрос
-                from sqlalchemy import text
-                result = await session.execute(text("SELECT 1"))
-                result.scalar()
-                logger.info("✅ Database connection test successful")
-                print("✅ Database connection test successful")
-        except Exception as test_error:
-            logger.error(f"❌ Database connection test failed: {test_error}")
-            print(f"❌ Database connection test FAILED: {test_error}")
+            logger.info("🔨 Creating database tables...")
+            print("🔨 Creating database tables...")
+            
+            async with db.engine.begin() as conn:
+                # Создаём все таблицы из Base.metadata
+                await conn.run_sync(Base.metadata.create_all)
+            
+            logger.info("✅ All tables created successfully")
+            print("✅ All tables created successfully")
+            
+        except Exception as table_error:
+            logger.error(f"❌ Error creating tables: {table_error}", exc_info=True)
+            print(f"❌ Error creating tables: {table_error}")
             return False
         
-        logger.info("✅ Database initialized successfully")
-        print("✅ Database initialized successfully")
+        # Проверяем что таблицы созданы
+        try:
+            logger.info("🔍 Verifying tables...")
+            print("🔍 Verifying tables...")
+            
+            async with db.get_session() as session:
+                from sqlalchemy import text
+                
+                # Проверяем наличие таблицы users
+                if 'postgres' in db_url:
+                    result = await session.execute(
+                        text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'")
+                    )
+                else:
+                    result = await session.execute(
+                        text("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'")
+                    )
+                
+                count = result.scalar()
+                if count == 0:
+                    logger.error("❌ Table 'users' was not created!")
+                    print("❌ Table 'users' was not created!")
+                    return False
+                
+                logger.info("✅ Table 'users' verified")
+                print("✅ Table 'users' exists")
+                
+                # Пробуем простой SELECT
+                result = await session.execute(text("SELECT COUNT(*) FROM users"))
+                user_count = result.scalar()
+                logger.info(f"✅ Users table accessible, count: {user_count}")
+                print(f"✅ Users in database: {user_count}")
+                
+        except Exception as verify_error:
+            logger.error(f"❌ Table verification failed: {verify_error}")
+            print(f"❌ Table verification failed: {verify_error}")
+            return False
+        
+        logger.info("✅ Database initialized and verified successfully")
+        print("✅ Database initialized and verified successfully")
         return True
         
     except Exception as e:
