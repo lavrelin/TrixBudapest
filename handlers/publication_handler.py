@@ -345,6 +345,14 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     
     try:
+        # ИСПРАВЛЕНО: проверяем доступность БД
+        if not db.session_maker:
+            logger.error("Database not available")
+            await update.callback_query.edit_message_text(
+                "😖 База данных недоступна. Попробуйте позже или обратитесь к администратору."
+            )
+            return
+        
         async with db.get_session() as session:
             # Get user
             result = await session.execute(
@@ -353,12 +361,13 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user = result.scalar_one_or_none()
             
             if not user:
+                logger.warning(f"User {user_id} not found in database")
                 await update.callback_query.edit_message_text(
-                    "😩 Пользователь не найден"
+                    "😩 Пользователь не найден. Используйте /start для регистрации."
                 )
                 return
             
-            # Проверка кулдауна
+            # ИСПРАВЛЕНИЕ: проверяем кулдаун правильно - с await
             from services.cooldown import CooldownService
             cooldown_service = CooldownService()
             
@@ -366,6 +375,7 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 can_post, remaining_seconds = await cooldown_service.can_post(user_id)
             except Exception as cooldown_error:
                 logger.warning(f"Cooldown check failed: {cooldown_error}, using fallback")
+                # Fallback to simple check
                 can_post = cooldown_service.simple_can_post(user_id)
                 remaining_seconds = cooldown_service.get_remaining_time(user_id)
             
@@ -376,7 +386,7 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
                 return
             
-            # ✅ Исправленное создание поста
+            # ИСПРАВЛЕНО: Безопасное создание поста с проверкой полей
             create_post_data = {
                 'user_id': int(user_id),
                 'category': str(post_data.get('category', ''))[:255] if post_data.get('category') else None,
@@ -389,16 +399,20 @@ async def send_to_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 'is_piar': False
             }
             
+            # Create post
             post = Post(**create_post_data)
             session.add(post)
-            await session.flush()  # нужно для получения post.id до коммита
+            await session.flush()  # ИСПРАВЛЕНО: flush для получения ID
+            
             post_id = post.id
             logger.info(f"Created post with ID: {post_id}")
             
             await session.commit()
-            await session.refresh(post)  # обновляем объект после коммита
             
-            # Отправляем пост в группу модерации
+            # Обновляем post из сессии
+            await session.refresh(post)
+            
+            # Send to moderation
             await send_to_moderation_group(update, context, post, user)
             
             # Обновляем кулдаун
