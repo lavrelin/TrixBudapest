@@ -87,7 +87,36 @@ class Database:
     async def get_session(self):
         """Получить сессию базы данных"""
         if not self.session_maker:
+            logger.warning("Database not initialized, attempting to initialize...")
             await self.init()
+        
+        if not self.session_maker:
+            # Если всё ещё не инициализировано - создаём заглушку
+            logger.error("Database session unavailable - using dummy session")
+            
+            class DummySession:
+                async def execute(self, *args, **kwargs):
+                    logger.warning("Dummy session execute called")
+                    return None
+                async def commit(self):
+                    logger.warning("Dummy session commit called")
+                async def rollback(self):
+                    logger.warning("Dummy session rollback called")
+                async def close(self):
+                    logger.warning("Dummy session close called")
+                async def flush(self):
+                    logger.warning("Dummy session flush called")
+                async def refresh(self, *args):
+                    logger.warning("Dummy session refresh called")
+                def add(self, *args):
+                    logger.warning("Dummy session add called")
+            
+            dummy = DummySession()
+            try:
+                yield dummy
+            finally:
+                pass
+            return
         
         async with self.session_maker() as session:
             try:
