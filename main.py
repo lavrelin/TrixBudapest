@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import logging
 import asyncio
 import os
@@ -78,6 +79,7 @@ from handlers.stats_commands import (
     channelstats_command, fullstats_command, 
     resetmsgcount_command, chatinfo_command
 )
+from handlers.help_commands import trix_command, handle_trix_callback
 
 # Import services
 from services.autopost_service import autopost_service
@@ -227,6 +229,8 @@ async def handle_all_callbacks(update: Update, context):
             await handle_game_callback(update, context)
         elif handler_type == "hp":
             await handle_hp_callback(update, context)
+        elif handler_type == "trix":
+            await handle_trix_callback(update, context)
         else:
             await query.answer("⚠️ Неизвестная команда", show_alert=True)
             logger.warning(f"Unknown callback type: {handler_type}")
@@ -353,6 +357,7 @@ def main():
     # ========== ОСНОВНЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
     
