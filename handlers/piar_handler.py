@@ -2,11 +2,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMe
 from telegram.ext import ContextTypes
 from config import Config
 from services.db import db
-from models import User, Post
+from models import User, Post, PostStatus  # <-- ДОБАВИТЬ PostStatus
 from sqlalchemy import select
 import logging
 
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
 
 # Piar form steps - 8 шагов, красиво оформлены для Telegram
 PIAR_STEPS = [
