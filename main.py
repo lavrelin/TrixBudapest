@@ -117,8 +117,8 @@ async def init_db_tables():
         
         # КРИТИЧЕСКИ ВАЖНО: Импортируем models ДО инициализации БД
         from models import Base, User, Post, Gender, PostStatus
-        logger.info("✅ Loaded models: User, Post, Gender, PostStatus")
-        print("✅ Loaded models: User, Post")
+        logger.info(f"✅ Loaded models: User, Post, Gender, PostStatus")
+        print(f"✅ Loaded models: User, Post")
         
         # Инициализируем БД - это создаст таблицы
         await db.init()
