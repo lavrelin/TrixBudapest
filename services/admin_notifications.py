@@ -128,12 +128,13 @@ class AdminNotificationService:
         await self.send_notification(message)
     
     async def send_statistics(self):
-        """Отправить статистику в админскую группу"""
+        """Отправить расширенную статистику в админскую группу"""
         from data.user_data import user_data
         from data.games_data import word_games, roll_games
+        from services.channel_stats import channel_stats
         from datetime import timedelta
         
-        # Собираем статистику
+        # Собираем статистику бота
         total_users = len(user_data)
         active_24h = sum(1 for data in user_data.values() if 
                         datetime.now() - data['last_activity'] <= timedelta(days=1))
@@ -142,7 +143,7 @@ class AdminNotificationService:
         total_messages = sum(data['message_count'] for data in user_data.values())
         banned_count = sum(1 for data in user_data.values() if data.get('banned'))
         
-        # Статистика игр
+        # Собираем статистику игр
         games_stats = ""
         for version in ['need', 'try', 'more']:
             active = "✅" if word_games[version]['active'] else "❌"
@@ -151,10 +152,18 @@ class AdminNotificationService:
             
             games_stats += f"\n{version.upper()}: {active} Слов: {total_words}, Участников розыгрыша: {participants}"
         
+        # НОВОЕ: Собираем статистику каналов и чатов
+        try:
+            channel_statistics = await channel_stats.get_all_stats()
+            channel_stats_text = "\n\n" + channel_stats.format_stats_message(channel_statistics)
+        except Exception as e:
+            logger.error(f"Error collecting channel stats: {e}")
+            channel_stats_text = "\n\n❌ Ошибка сбора статистики каналов"
+        
         message = (
             f"📊 АВТОМАТИЧЕСКАЯ СТАТИСТИКА\n"
             f"⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-            f"👥 ПОЛЬЗОВАТЕЛИ:\n"
+            f"👥 ПОЛЬЗОВАТЕЛИ БОТА:\n"
             f"• Всего: {total_users}\n"
             f"• Активных за 24ч: {active_24h}\n"
             f"• Активных за 7д: {active_7d}\n"
@@ -162,12 +171,17 @@ class AdminNotificationService:
             f"💬 СООБЩЕНИЯ:\n"
             f"• Всего: {total_messages}\n"
             f"• Среднее на пользователя: {total_messages // total_users if total_users > 0 else 0}\n\n"
-            f"🎮 ИГРЫ:{games_stats}\n\n"
-            f"📈 Следующая статистика через {Config.STATS_INTERVAL_HOURS} часов"
+            f"🎮 ИГРЫ:{games_stats}"
+            f"{channel_stats_text}"
         )
         
         await self.send_notification(message)
-        logger.info("Statistics sent to admin group")
+        
+        # Сбрасываем счетчики сообщений в чатах после отправки статистики
+        for chat_id in Config.STATS_CHANNELS.values():
+            channel_stats.reset_message_count(chat_id)
+        
+        logger.info("Statistics with channel data sent to admin group")
     
     async def notify_error(self, error_type: str, error_message: str, user_id: Optional[int] = None):
         """Уведомление об ошибке"""
