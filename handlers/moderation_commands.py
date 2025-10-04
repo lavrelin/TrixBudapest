@@ -15,203 +15,232 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Забанить пользователя (модераторы)"""
+    """Забанить пользователя - БЛОКИРУЕТ везде"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
-    if not context.args:
-        await update.message.reply_text(
-            "📝 **Использование:**\n"
-            "`/ban @username причина` или\n"
-            "`/ban ID причина`",
+
+    # Удаляем команду из чата
+    if update.effective_chat.type in ['group', 'supergroup']:
+        try:
+            await update.message.delete()
+        except:
+            pass
+
+    # Проверяем формат команды
+    if not update.message.reply_to_message and not context.args:
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=(
+                "📝 **Использование:**\n"
+                "• Ответьте на сообщение: `/ban причина`\n"
+                "• Или укажите: `/ban @username причина`"
+            ),
             parse_mode='Markdown'
         )
         return
-    
-    target = context.args[0]
-    reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
-    
-    # Получаем информацию о пользователе
-    user_info = None
-    target_id = None
-    
-    if target.startswith('@'):
-        username = target[1:]
-        user_info = get_user_by_username(username)
-        if user_info:
-            target_id = user_info['id']
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if not user_info:
-        await update.message.reply_text("❌ Пользователь не найден")
-        return
-    
-    # Проверка на бан админа или модератора
+
+    # Определяем цель
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        target_id = target_user.id
+        target_username = target_user.username or f"ID_{target_id}"
+        reason = ' '.join(context.args) if context.args else "Не указана"
+    else:
+        target = context.args[0]
+        reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+
+        # Получаем пользователя по username или ID
+        user_info = None
+        if target.startswith('@'):
+            user_info = get_user_by_username(target[1:])
+        elif target.isdigit():
+            user_info = get_user_by_id(int(target))
+
+        if not user_info:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text="❌ Пользователь не найден"
+            )
+            return
+
+        target_id = user_info['id']
+        target_username = user_info['username']
+
+    # Проверка на бан модератора/админа
     if Config.is_moderator(target_id):
-        await update.message.reply_text("❌ Нельзя забанить модератора или администратора")
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text="❌ Нельзя забанить модератора или администратора"
+        )
         return
-    
-    # Баним пользователя
+
+    banned_chats = []
+    failed_chats = []
+
+    # Баним в основном чате
+    try:
+        await context.bot.ban_chat_member(
+            chat_id=Config.CHAT_FOR_ACTUAL,
+            user_id=target_id
+        )
+        banned_chats.append("Чат Будапешт")
+    except Exception as e:
+        logger.error(f"Failed to ban in main chat: {e}")
+        failed_chats.append("Чат Будапешт")
+
+    # Баним в группе модерации
+    try:
+        await context.bot.ban_chat_member(
+            chat_id=Config.MODERATION_GROUP_ID,
+            user_id=target_id
+        )
+        banned_chats.append("Группа модерации")
+    except Exception as e:
+        logger.error(f"Failed to ban in moderation group: {e}")
+        failed_chats.append("Группа модерации")
+
+    # Фиксируем в БД
     ban_user(target_id, reason)
-    
-    # Отправляем уведомление в админскую группу
+
+    # Уведомляем админов
     await admin_notifications.notify_ban(
-        username=user_info['username'],
+        username=target_username,
         user_id=target_id,
         reason=reason,
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
-    
-    # Отправляем результат
+
+    # Результат
     result_text = (
         f"🚫 **Пользователь заблокирован:**\n\n"
-        f"👤 @{user_info['username']} (ID: {target_id})\n"
+        f"👤 @{target_username} (ID: {target_id})\n"
         f"📝 Причина: {reason}\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n"
-        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
     )
-    
-    await update.message.reply_text(result_text, parse_mode='Markdown')
-    
-    logger.info(f"User {target_id} banned by {update.effective_user.id}, reason: {reason}")
+    if banned_chats:
+        result_text += f"✅ Заблокирован в: {', '.join(banned_chats)}\n"
+    if failed_chats:
+        result_text += f"⚠️ Не удалось заблокировать в: {', '.join(failed_chats)}\n"
 
+    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+
+    await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text=result_text,
+        parse_mode='Markdown'
+    )
+
+    logger.info(f"User {target_id} banned by {update.effective_user.id}")
+
+# -------------------------------------------------------------
+# 🔓 UNBAN — снятие блокировки
+# -------------------------------------------------------------
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Разбанить пользователя (модераторы)"""
+    """Разбанить пользователя"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     if not context.args:
         await update.message.reply_text(
             "📝 **Использование:**\n"
-            "`/unban @username` или\n"
-            "`/unban ID`",
+            "`/unban @username` или `/unban ID`",
             parse_mode='Markdown'
         )
         return
-    
+
     target = context.args[0]
-    
-    # Получаем информацию о пользователе
     user_info = None
     target_id = None
-    
+
     if target.startswith('@'):
-        username = target[1:]
-        user_info = get_user_by_username(username)
-        if user_info:
-            target_id = user_info['id']
+        user_info = get_user_by_username(target[1:])
     elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
+        user_info = get_user_by_id(int(target))
+
     if not user_info:
         await update.message.reply_text("❌ Пользователь не найден")
         return
-    
+
+    target_id = user_info['id']
+
     if not is_user_banned(target_id):
         await update.message.reply_text("ℹ️ Пользователь не забанен")
         return
-    
-    # Разбаниваем пользователя
+
     unban_user(target_id)
-    
-    # Отправляем уведомление в админскую группу
+
+    # Уведомление
     await admin_notifications.notify_unban(
         username=user_info['username'],
         user_id=target_id,
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
-    
-    # Отправляем результат
-    result_text = (
+
+    await update.message.reply_text(
         f"✅ **Пользователь разблокирован:**\n\n"
         f"👤 @{user_info['username']} (ID: {target_id})\n"
         f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n"
-        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        parse_mode='Markdown'
     )
-    
-    await update.message.reply_text(result_text, parse_mode='Markdown')
-    
+
     logger.info(f"User {target_id} unbanned by {update.effective_user.id}")
 
+# -------------------------------------------------------------
+# 🔇 MUTE — ограничение отправки сообщений
+# -------------------------------------------------------------
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Замутить пользователя (модераторы)"""
+    """Замутить пользователя - реальный мут в Telegram"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
-    # Удаляем команду из чата
-    try:
-        await update.message.delete()
-    except:
-        pass
-    
-    # Проверяем, это reply на сообщение или команда с аргументами
-    target_user = None
-    time_str = None
-    
-    if update.message.reply_to_message:
-        # Если это reply, берем пользователя из сообщения
-        target_user = update.message.reply_to_message.from_user
-        target_id = target_user.id
-        
-        # Время берем из аргументов
-        if context.args:
-            time_str = context.args[0]
-        else:
-            time_str = "10m"  # По умолчанию 10 минут
-    else:
-        # Если не reply, нужны аргументы
-        if len(context.args) < 2:
-            msg = await update.message.reply_text(
+
+    if update.effective_chat.type in ['group', 'supergroup']:
+        try:
+            await update.message.delete()
+        except:
+            pass
+
+    if not update.message.reply_to_message and len(context.args) < 2:
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=(
                 "📝 **Использование:**\n"
                 "• Ответьте на сообщение: `/mute 10m`\n"
                 "• Или укажите: `/mute @username 10m`\n\n"
-                "Время указывается в формате:\n"
-                "• `10m` - 10 минут\n"
-                "• `2h` - 2 часа\n"
-                "• `1d` - 1 день\n"
-                "• `7d` - 7 дней",
-                parse_mode='Markdown'
-            )
-            # Удаляем сообщение через 10 секунд
-            await asyncio.sleep(10)
-            try:
-                await msg.delete()
-            except:
-                pass
-            return
-        
+                "Формат времени: 10m, 2h, 1d, 7d"
+            ),
+            parse_mode='Markdown'
+        )
+        return
+
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        target_id = target_user.id
+        target_username = target_user.username or f"ID_{target_id}"
+        time_str = context.args[0] if context.args else "10m"
+    else:
         target = context.args[0]
-        time_str = context.args[1]
-        
-        # Получаем информацию о пользователе
+        time_str = context.args[1] if len(context.args) > 1 else "10m"
         user_info = None
-        target_id = None
-        
         if target.startswith('@'):
-            username = target[1:]
-            user_info = get_user_by_username(username)
-            if user_info:
-                target_id = user_info['id']
+            user_info = get_user_by_username(target[1:])
         elif target.isdigit():
-            target_id = int(target)
-            user_info = get_user_by_id(target_id)
-        
+            user_info = get_user_by_id(int(target))
+
         if not user_info:
-            msg = await update.message.reply_text("❌ Пользователь не найден")
-            await asyncio.sleep(5)
-            try:
-                await msg.delete()
-            except:
-                pass
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text="❌ Пользователь не найден"
+            )
             return
-    
-    # Парсим время
+
+        target_id = user_info['id']
+        target_username = user_info['username']
+
+    # Парсим длительность
     try:
         if time_str.endswith('m'):
             seconds = int(time_str[:-1]) * 60
@@ -220,164 +249,133 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif time_str.endswith('d'):
             seconds = int(time_str[:-1]) * 86400
         else:
-            msg = await update.message.reply_text("❌ Неверный формат времени")
-            await asyncio.sleep(5)
-            try:
-                await msg.delete()
-            except:
-                pass
-            return
-    except ValueError:
-        msg = await update.message.reply_text("❌ Неверный формат времени")
-        await asyncio.sleep(5)
-        try:
-            await msg.delete()
-        except:
-            pass
+            raise ValueError
+    except:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Неверный формат времени")
         return
-    
-    # Проверка на мут админа или модератора
+
     if Config.is_moderator(target_id):
-        msg = await update.message.reply_text("❌ Нельзя замутить модератора или администратора")
-        await asyncio.sleep(5)
-        try:
-            await msg.delete()
-        except:
-            pass
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Нельзя замутить модератора")
         return
-    
-    # Получаем данные пользователя
-    if target_user:
-        username = target_user.username or f"ID_{target_id}"
-    else:
-        user_info = get_user_by_id(target_id)
-        username = user_info['username'] if user_info else f"ID_{target_id}"
-    
-    # Мутим пользователя
+
     mute_until = datetime.now() + timedelta(seconds=seconds)
+
+    muted_chats = []
+    failed_chats = []
+
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=Config.CHAT_FOR_ACTUAL,
+            user_id=target_id,
+            permissions=ChatPermissions(can_send_messages=False),
+            until_date=mute_until
+        )
+        muted_chats.append("Чат Будапешт")
+    except Exception as e:
+        logger.error(f"Failed to mute in main chat: {e}")
+        failed_chats.append("Чат Будапешт")
+
     mute_user(target_id, mute_until)
-    
-    # Отправляем уведомление в админскую группу
+
     await admin_notifications.notify_mute(
-        username=username,
+        username=target_username,
         user_id=target_id,
         duration=time_str,
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
-    
-    # Отправляем подтверждение модератору в личку (если возможно)
-    try:
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text=(
-                f"🔇 **Пользователь замучен:**\n\n"
-                f"👤 @{username} (ID: {target_id})\n"
-                f"⏱️ Длительность: {time_str}\n"
-                f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}"
-            ),
-            parse_mode='Markdown'
-        )
-    except:
-        # Если нельзя отправить в личку, отправляем в чат и удаляем через 5 секунд
-        msg = await update.message.reply_text(
-            f"🔇 @{username} замучен на {time_str}",
-            parse_mode='Markdown'
-        )
-        await asyncio.sleep(5)
-        try:
-            await msg.delete()
-        except:
-            pass
-    
+
+    result_text = (
+        f"🔇 **Пользователь замучен:**\n\n"
+        f"👤 @{target_username} (ID: {target_id})\n"
+        f"⏱️ Длительность: {time_str}\n"
+        f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n\n"
+    )
+    if muted_chats:
+        result_text += f"✅ Замучен в: {', '.join(muted_chats)}\n"
+    if failed_chats:
+        result_text += f"⚠️ Не удалось замутить в: {', '.join(failed_chats)}"
+
+    await context.bot.send_message(chat_id=update.effective_user.id, text=result_text, parse_mode='Markdown')
+
     logger.info(f"User {target_id} muted by {update.effective_user.id} for {time_str}")
 
+# -------------------------------------------------------------
+# 🔊 UNMUTE — снятие ограничения
+# -------------------------------------------------------------
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Размутить пользователя (модераторы)"""
+    """Размутить пользователя"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     if not context.args:
         await update.message.reply_text(
             "📝 **Использование:**\n"
-            "`/unmute @username` или\n"
-            "`/unmute ID`",
+            "`/unmute @username` или `/unmute ID`",
             parse_mode='Markdown'
         )
         return
-    
+
     target = context.args[0]
-    
-    # Получаем информацию о пользователе
     user_info = None
-    target_id = None
-    
     if target.startswith('@'):
-        username = target[1:]
-        user_info = get_user_by_username(username)
-        if user_info:
-            target_id = user_info['id']
+        user_info = get_user_by_username(target[1:])
     elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
+        user_info = get_user_by_id(int(target))
+
     if not user_info:
         await update.message.reply_text("❌ Пользователь не найден")
         return
-    
+
+    target_id = user_info['id']
+
     if not is_user_muted(target_id):
         await update.message.reply_text("ℹ️ Пользователь не замучен")
         return
-    
-    # Размучиваем пользователя
+
     unmute_user(target_id)
-    
-    # Отправляем уведомление в админскую группу
+
     await admin_notifications.notify_unmute(
         username=user_info['username'],
         user_id=target_id,
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
-    
-    # Отправляем результат
-    result_text = (
+
+    await update.message.reply_text(
         f"🔊 **Пользователь размучен:**\n\n"
         f"👤 @{user_info['username']} (ID: {target_id})\n"
         f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n"
-        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        parse_mode='Markdown'
     )
-    
-    await update.message.reply_text(result_text, parse_mode='Markdown')
-    
+
     logger.info(f"User {target_id} unmuted by {update.effective_user.id}")
 
+# -------------------------------------------------------------
+# 📋 BANLIST — список забаненных пользователей
+# -------------------------------------------------------------
 async def banlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список забаненных пользователей (модераторы)"""
+    """Список забаненных пользователей"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     banned_users = get_banned_users()
-    
     if not banned_users:
         await update.message.reply_text("📋 Список забаненных пуст")
         return
-    
+
     text = f"🚫 **СПИСОК ЗАБАНЕННЫХ** ({len(banned_users)}):\n\n"
-    
     for i, user in enumerate(banned_users, 1):
-        ban_reason = user.get('ban_reason', 'Не указана')
+        reason = user.get('ban_reason', 'Не указана')
         ban_date = user.get('banned_at', datetime.now()).strftime('%d.%m.%Y')
-        
         text += f"{i}. @{user['username']} (ID: {user['id']})\n"
-        text += f"   📝 Причина: {ban_reason}\n"
+        text += f"   📝 Причина: {reason}\n"
         text += f"   📅 Дата: {ban_date}\n\n"
-        
-        # Telegram ограничивает длину сообщения
         if len(text) > 3500:
             await update.message.reply_text(text, parse_mode='Markdown')
             text = ""
-    
+
     if text:
         await update.message.reply_text(text, parse_mode='Markdown')
 
