@@ -11,7 +11,7 @@ class Config:
     # Telegram Bot Token - ОБЯЗАТЕЛЬНЫЙ
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     
-    # ============= КАНАЛЫ И ГРУППЫ =============
+  # ============= КАНАЛЫ И ГРУППЫ =============
     
     # Основные каналы
     TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID", "-1002743668534"))
@@ -25,6 +25,14 @@ class Config:
     BUDAPEST_CHAT = os.getenv("BUDAPEST_CHAT", "https://t.me/tgchatxxx")
     CATALOG_CHANNEL = os.getenv("CATALOG_CHANNEL", "https://t.me/trixvault")
     TRADE_CHANNEL = os.getenv("TRADE_CHANNEL", "https://t.me/hungarytrade")
+    
+    # НОВОЕ: Каналы для мониторинга статистики
+    STATS_CHANNELS = {
+        'budapest_channel': int(os.getenv("BUDAPEST_CHANNEL_ID", "-1002743668534")),
+        'budapest_chat': int(os.getenv("BUDAPEST_CHAT_ID", "-1002734837434")),
+        'catalog_channel': int(os.getenv("CATALOG_CHANNEL_ID", "-1002743668534")),
+        'trade_channel': int(os.getenv("TRADE_CHANNEL_ID", "-1003033694255"))
+    }
     
     # ============= БАЗА ДАННЫХ =============
     
