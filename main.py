@@ -96,10 +96,17 @@ async def init_db_tables():
         
         # Проверяем тип БД
         db_url = Config.DATABASE_URL
+        
+        # ИСПРАВЛЕНО: правильная проверка типа БД
         if db_url.startswith('postgres'):
             logger.info("📊 Using PostgreSQL database")
-        else:
+            print("📊 Using PostgreSQL database")
+        elif db_url.startswith('sqlite'):
             logger.info("📊 Using SQLite database")
+            print("📊 Using SQLite database")
+        else:
+            logger.warning(f"⚠️ Unknown database type: {db_url[:20]}...")
+            print(f"⚠️ Unknown database type")
         
         # Импортируем models чтобы зарегистрировать все таблицы
         from models import Base, User, Post
@@ -108,12 +115,35 @@ async def init_db_tables():
         # Инициализируем БД
         await db.init()
         
+        # ИСПРАВЛЕНО: проверяем успешность инициализации
+        if db.engine is None or db.session_maker is None:
+            logger.error("❌ Database initialization failed - engine or session_maker is None")
+            print("❌ Database initialization FAILED")
+            return False
+        
+        # Пытаемся создать тестовую сессию
+        try:
+            async with db.get_session() as session:
+                # Простой тестовый запрос
+                from sqlalchemy import text
+                result = await session.execute(text("SELECT 1"))
+                result.scalar()
+                logger.info("✅ Database connection test successful")
+                print("✅ Database connection test successful")
+        except Exception as test_error:
+            logger.error(f"❌ Database connection test failed: {test_error}")
+            print(f"❌ Database connection test FAILED: {test_error}")
+            return False
+        
         logger.info("✅ Database initialized successfully")
+        print("✅ Database initialized successfully")
         return True
         
     except Exception as e:
         logger.error(f"❌ Database initialization error: {e}", exc_info=True)
+        print(f"❌ Database initialization error: {e}")
         logger.warning("⚠️ Bot will continue without database")
+        print("⚠️ Bot will continue without database")
         return False
 
 async def handle_all_callbacks(update: Update, context):
