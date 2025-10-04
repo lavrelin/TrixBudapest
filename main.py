@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 import logging
 import asyncio
 import os
@@ -8,7 +7,7 @@ import sqlite3
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
-    CallbackQueryHandler, filters
+    CallbackQueryHandler, filters, ContextTypes
 )
 from dotenv import load_dotenv
 from config import Config
