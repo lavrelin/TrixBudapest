@@ -92,7 +92,8 @@ class Database:
         async with self.session_maker() as session:
             try:
                 yield session
-                await session.commit()
+                # ИСПРАВЛЕНО: не делаем автоматический commit
+                # Commit делается явно в коде где нужно
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Database session error: {e}")
