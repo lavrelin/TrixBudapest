@@ -1,5 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from config import Config
 import logging
 import secrets
 import string
@@ -12,6 +13,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username
     first_name = update.effective_user.first_name
     last_name = update.effective_user.last_name
+    chat_id = update.effective_chat.id
+    
+    # ✅ КРИТИЧНО: Игнорируем команду в Будапешт чате
+    if chat_id == Config.BUDAPEST_CHAT_ID:
+        try:
+            await update.message.delete()
+            logger.info(f"Deleted /start from Budapest chat, user {user_id}")
+        except Exception as e:
+            logger.error(f"Could not delete /start: {e}")
+        return
     
     # Пытаемся сохранить пользователя в БД, но не падаем если ошибка
     try:
@@ -46,11 +57,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Could not save user to DB: {e}")
         # Продолжаем работу без БД
     
-    # Always show main menu
+    # Always show main menu (только в ЛС или разрешенных чатах)
     await show_main_menu(update, context)
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show new main menu design"""
+    
+    # ✅ КРИТИЧНО: Не показываем меню в Будапешт чате
+    chat_id = update.effective_chat.id
+    if chat_id == Config.BUDAPEST_CHAT_ID:
+        logger.info(f"Blocked main menu in Budapest chat")
+        return
     
     keyboard = [
         [InlineKeyboardButton("🙅‍♂️ Будапешт - канал", url="https://t.me/snghu")],
