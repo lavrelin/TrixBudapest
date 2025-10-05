@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 import logging
 import asyncio
 import os
@@ -13,24 +11,10 @@ from telegram.ext import (
 from dotenv import load_dotenv
 from config import Config
 
-# Проверяем и очищаем пустую SQLite БД если есть
-db_path = "./trixbot.db"
-if os.path.exists(db_path):
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        conn.close()
-        
-        if not tables:
-            print(f"⚠️ Found empty database, removing: {db_path}")
-            os.remove(db_path)
-            print("✅ Empty database removed")
-    except Exception as e:
-        print(f"⚠️ Error checking database: {e}")
+# ===============================
+# Handlers
+# ===============================
 
-# Import handlers
 from handlers.start_handler import start_command
 from handlers.menu_handler import handle_menu_callback
 from handlers.publication_handler import (
@@ -46,7 +30,7 @@ from handlers.profile_handler import handle_profile_callback
 from handlers.basic_handler import (
     id_command, participants_command, report_command
 )
-from handlers.link_handler import trixlinks_command  # ИСПРАВЛЕНО: только trixlinks
+from handlers.link_handler import trixlinks_command  # только trixlinks
 from handlers.moderation_commands import (
     ban_command, unban_command, mute_command, unmute_command,
     banlist_command, stats_command, top_command, lastseen_command
@@ -76,16 +60,21 @@ from handlers.stats_commands import (
     resetmsgcount_command, chatinfo_command
 )
 from handlers.help_commands import trix_command, handle_trix_callback
-from handlers.social_handler import social_command, giveaway_command  # НОВОЕ
-from handlers.bonus_handler import bonus_command  # НОВОЕ
+from handlers.social_handler import social_command, giveaway_command  # Новые
+from handlers.bonus_handler import bonus_command  # Новый
 
-# Import services
+# ===============================
+# Services
+# ===============================
 from services.autopost_service import autopost_service
 from services.admin_notifications import admin_notifications
 from services.stats_scheduler import stats_scheduler
 from services.channel_stats import channel_stats
 from services.db import db
 
+# ===============================
+# Env
+# ===============================
 load_dotenv()
 
 # Configure logging
