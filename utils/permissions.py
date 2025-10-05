@@ -1,3 +1,4 @@
+# utils/permissions.py
 from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -34,6 +35,25 @@ def moderator_only(func):
                 "❌ Эта команда доступна только модераторам"
             )
             logger.warning(f"User {user_id} tried to use moderator command {func.__name__}")
+            return
+        
+        return await func(update, context, *args, **kwargs)
+    
+    return wrapper
+
+def ignore_budapest_chat(func):
+    """Decorator to ignore commands from Budapest chat"""
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        chat_id = update.effective_chat.id
+        
+        # Игнорируем команды из Будапешт чата
+        if chat_id == Config.BUDAPEST_CHAT_ID:
+            try:
+                await update.message.delete()
+                logger.info(f"Ignored command {func.__name__} from Budapest chat")
+            except Exception as e:
+                logger.error(f"Could not delete message: {e}")
             return
         
         return await func(update, context, *args, **kwargs)
