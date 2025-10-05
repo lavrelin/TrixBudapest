@@ -5,6 +5,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# -------------------- КОМАНДЫ --------------------
+
 async def social_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать социальные сети TRIX"""
     
@@ -37,11 +39,19 @@ async def social_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👆 Нажмите на кнопку чтобы перейти"
     )
     
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
 
 async def giveaway_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Информация о розыгрышах"""
@@ -76,10 +86,49 @@ async def giveaway_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🍀 Удачи!"
     )
     
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
 
-__all__ = ['social_command', 'giveaway_command']
+
+# -------------------- ДИНАМИЧЕСКОЕ МЕНЮ --------------------
+
+MENU_ACTIONS = {
+    "menu:social": social_command,
+    "menu:giveaway": giveaway_command
+}
+
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка кнопок главного меню"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "menu:back":
+        text = "🔹 Главное меню TRIX:\n\nВыберите раздел:"
+        keyboard = [
+            [InlineKeyboardButton("📱 Соцсети", callback_data="menu:social")],
+            [InlineKeyboardButton("🎁 Розыгрыши", callback_data="menu:giveaway")],
+            # Здесь можно добавить новые пункты меню
+        ]
+        await query.edit_message_text(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    elif query.data in MENU_ACTIONS:
+        # Автоматически вызывает соответствующую команду
+        await MENU_ACTIONS[query.data](update, context)
+
+
+# -------------------- ЭКСПОРТ --------------------
+
+__all__ = ['social_command', 'giveaway_command', 'menu_callback']
