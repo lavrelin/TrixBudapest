@@ -223,7 +223,6 @@ channelstats_command = ignore_budapest_chat_commands(channelstats_command)
 fullstats_command = ignore_budapest_chat_commands(fullstats_command)
 resetmsgcount_command = ignore_budapest_chat_commands(resetmsgcount_command)
 chatinfo_command = ignore_budapest_chat_commands(chatinfo_command)
-trixlinks_command = ignore_budapest_chat_commands(trixlinks_command)
 ban_command = ignore_budapest_chat_commands(ban_command)
 unban_command = ignore_budapest_chat_commands(unban_command)
 mute_command = ignore_budapest_chat_commands(mute_command)
@@ -419,12 +418,9 @@ def main():
     
     # Регистрируем все команды (уже обернутые декоратором)
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
     
-    application.add_handler(CommandHandler("whois", whois_command))
-    application.add_handler(CommandHandler("join", join_command))
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
     
@@ -439,9 +435,6 @@ def main():
     application.add_handler(CommandHandler("chatinfo", chatinfo_command))
     
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
-    application.add_handler(CommandHandler("trixlinksadd", trixlinksadd_command))
-    application.add_handler(CommandHandler("trixlinksedit", trixlinksedit_command))
-    application.add_handler(CommandHandler("trixlinksdelete", trixlinksdelete_command))
     
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
