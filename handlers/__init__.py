@@ -23,6 +23,7 @@ from .basic_handler import (
     join_command, 
     participants_command, 
     report_command
+)
 from .link_handler import trixlinks_command
 from .moderation_commands import (
     ban_command, 
