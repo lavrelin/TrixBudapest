@@ -26,9 +26,6 @@ from .basic_handler import (
 )
 from .link_handler import (
     trixlinks_command, 
-    trixlinksadd_command, 
-    trixlinksedit_command, 
-    trixlinksdelete_command,
     handle_link_url,
     handle_link_edit
 )
