@@ -432,11 +432,6 @@ def main():
     application.add_handler(CommandHandler("giveaway", giveaway_command))
     application.add_handler(CommandHandler("bonus", bonus_command))
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
-    # НОВЫЕ КОМАНДЫ
-    application.add_handler(CommandHandler("social", social_command))
-    application.add_handler(CommandHandler("giveaway", giveaway_command))
-    application.add_handler(CommandHandler("trixlinks", trixlinks_command))
-    
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
     
