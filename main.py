@@ -103,6 +103,7 @@ async def init_db_tables():
         logger.info("🔄 Initializing database...")
         print("🔄 Initializing database...")
         
+        # Проверяем тип БД
         db_url = Config.DATABASE_URL
         
         if db_url.startswith('postgres'):
@@ -115,37 +116,43 @@ async def init_db_tables():
             logger.warning(f"⚠️ Unknown database type: {db_url[:20]}...")
             print(f"⚠️ Unknown database type: {db_url[:20]}...")
         
+        # Импортируем models ДО инициализации БД
         from models import Base, User, Post, Gender, PostStatus
-        logger.info("✅ Loaded models: User, Post, Gender, PostStatus")
-        print("✅ Loaded models: User, Post")
+        logger.info(f"✅ Loaded models: User, Post, Gender, PostStatus")
+        print(f"✅ Loaded models: User, Post")
         
+        # Инициализируем БД
         await db.init()
         
         if db.engine is None or db.session_maker is None:
-            logger.error("❌ Database initialization failed - engine or session_maker is None")
-            print("❌ Database initialization FAILED - no engine/session_maker")
+            logger.error("❌ Database initialization failed")
+            print("❌ Database initialization FAILED")
             return False
         
-        logger.info("✅ Database engine and session_maker created")
-        print("✅ Database engine and session_maker created")
+        logger.info("✅ Database engine created")
+        print("✅ Database engine created")
         
+        # Создаём все таблицы
         try:
-            logger.info("🔨 Creating database tables...")
-            print("🔨 Creating database tables...")
+            logger.info("🔨 Creating tables...")
+            print("🔨 Creating tables...")
+            
             async with db.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("✅ All tables created successfully")
-            print("✅ All tables created successfully")
+            
+            logger.info("✅ Tables created")
+            print("✅ Tables created")
+            
         except Exception as table_error:
-            logger.error(f"❌ Error creating tables: {table_error}", exc_info=True)
+            logger.error(f"❌ Error creating tables: {table_error}")
             print(f"❌ Error creating tables: {table_error}")
             return False
         
+        # Проверяем таблицы
         try:
-            logger.info("🔍 Verifying tables...")
-            print("🔍 Verifying tables...")
             async with db.get_session() as session:
                 from sqlalchemy import text
+                
                 if 'postgres' in db_url:
                     result = await session.execute(
                         text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'")
@@ -154,41 +161,37 @@ async def init_db_tables():
                     result = await session.execute(
                         text("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'")
                     )
+                
                 count = result.scalar()
                 if count == 0:
-                    logger.error("❌ Table 'users' was not created!")
-                    print("❌ Table 'users' was not created!")
+                    logger.error("❌ Table 'users' not found!")
+                    print("❌ Table 'users' not found!")
                     return False
                 
-                logger.info("✅ Table 'users' verified")
                 print("✅ Table 'users' exists")
                 
-                result = await session.execute(text("SELECT COUNT(*) FROM users"))
-                user_count = result.scalar()
-                logger.info(f"✅ Users table accessible, count: {user_count}")
-                print(f"✅ Users in database: {user_count}")
         except Exception as verify_error:
-            logger.error(f"❌ Table verification failed: {verify_error}")
-            print(f"❌ Table verification failed: {verify_error}")
+            logger.error(f"❌ Verification failed: {verify_error}")
+            print(f"❌ Verification failed: {verify_error}")
             return False
         
-        logger.info("✅ Database initialized and verified successfully")
-        print("✅ Database initialized and verified successfully")
+        logger.info("✅ Database ready")
+        print("✅ Database ready")
         return True
+        
     except Exception as e:
-        logger.error(f"❌ Database initialization error: {e}", exc_info=True)
-        print(f"❌ Database initialization error: {e}")
-        logger.warning("⚠️ Bot will continue without database")
-        print("⚠️ Bot will continue without database")
+        logger.error(f"❌ Database error: {e}")
+        print(f"❌ Database error: {e}")
         return False
 
 async def handle_all_callbacks(update: Update, context):
     """Роутер для всех callback запросов"""
     query = update.callback_query
+    
     if not query or not query.data:
         return
     
-    # Игнорируем callback из Будапешт чата
+    # ✅ КРИТИЧНО: Игнорируем callback из Будапешт чата
     if query.message and query.message.chat.id == Config.BUDAPEST_CHAT_ID:
         await query.answer("⚠️ Бот не работает в этом чате", show_alert=True)
         logger.info(f"Ignored callback from Budapest chat: {query.data}")
@@ -232,35 +235,40 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    # Игнорируем Будапешт чат
+    # ✅ КРИТИЧЕСКИ ВАЖНО: игнорируем ВСЕ из Будапешт чата
     if chat_id == Config.BUDAPEST_CHAT_ID:
+        # Если это команда - удаляем
         if update.message and update.message.text and update.message.text.startswith('/'):
             try:
                 await update.message.delete()
                 logger.info(f"Deleted command from Budapest chat: {update.message.text}")
             except Exception as e:
                 logger.error(f"Could not delete: {e}")
+        # Полностью игнорируем обработку
         return
     
-    # Подсчёт сообщений
+    # Подсчитываем сообщения в отслеживаемых чатах
     if chat_id in Config.STATS_CHANNELS.values():
         channel_stats.increment_message_count(chat_id)
     
     waiting_for = context.user_data.get('waiting_for')
     
+    logger.info(f"Message from user {user_id}, waiting_for: {waiting_for}")
+    
     try:
-        # Игровой ввод
+        # Проверка на игровой ввод
         if await handle_game_text_input(update, context):
             return
+        
         if await handle_game_media_input(update, context):
             return
         
-        # Модерация
+        # Обработка ввода для модераторов
         if waiting_for in ['approve_link', 'reject_reason']:
             await handle_moderation_text(update, context)
             return
         
-        # Piar форма
+        # Обработка ввода для piar формы
         if waiting_for and waiting_for.startswith('piar_'):
             if update.message.photo or update.message.video:
                 await handle_piar_photo(update, context)
@@ -270,12 +278,12 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_piar_text(update, context, field, text)
             return
         
-        # Медиа для публикаций
+        # Обработка медиа для постов
         if update.message.photo or update.message.video or update.message.document:
             await handle_media_input(update, context)
             return
         
-        # Текст публикаций
+        # Обработка текста для постов
         if waiting_for == 'post_text' or context.user_data.get('post_data'):
             await handle_text_input(update, context)
             return
@@ -284,6 +292,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from data.user_data import waiting_users
         if user_id in waiting_users:
             action = waiting_users[user_id].get('action')
+            
             if action == 'add_link':
                 from handlers.link_handler import handle_link_url
                 await handle_link_url(update, context)
@@ -292,14 +301,20 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 from handlers.link_handler import handle_link_edit
                 await handle_link_edit(update, context)
                 return
+        
     except Exception as e:
         logger.error(f"Error handling message: {e}", exc_info=True)
-        if update.message:
-            await update.message.reply_text("❌ Произошла ошибка при обработке сообщения")
+        try:
+            await update.message.reply_text(
+                "❌ Произошла ошибка при обработке сообщения"
+            )
+        except:
+            pass
 
 async def error_handler(update: object, context):
     """Обработчик ошибок"""
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+    
     if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text(
@@ -309,13 +324,16 @@ async def error_handler(update: object, context):
             pass
 
 def main():
+    """Главная функция запуска бота"""
     if not Config.BOT_TOKEN:
         logger.error("❌ BOT_TOKEN not found!")
         return
     
+    # Создаем event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
+    # Инициализируем базу данных
     logger.info("🚀 Starting TrixBot initialization...")
     print("🚀 Starting TrixBot...")
     print(f"📊 Database URL: {Config.DATABASE_URL[:30]}...")
@@ -328,8 +346,10 @@ def main():
     else:
         print("✅ Database connected and initialized")
     
+    # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
     
+    # Настройка сервисов
     autopost_service.set_bot(application.bot)
     admin_notifications.set_bot(application.bot)
     channel_stats.set_bot(application.bot)
@@ -337,30 +357,38 @@ def main():
     
     logger.info("✅ Services initialized")
     
-    # ========== Команды ==========
+    # ========== ОСНОВНЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
+    
+    # ========== БАЗОВЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("whois", whois_command))
     application.add_handler(CommandHandler("join", join_command))
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
+    
+    # ========== АДМИНСКИЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("say", say_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("sendstats", sendstats_command))
+    
+    # ========== СТАТИСТИКА КАНАЛОВ ==========
     application.add_handler(CommandHandler("channelstats", channelstats_command))
     application.add_handler(CommandHandler("fullstats", fullstats_command))
     application.add_handler(CommandHandler("resetmsgcount", resetmsgcount_command))
     application.add_handler(CommandHandler("chatinfo", chatinfo_command))
+    
+    # ========== ССЫЛКИ ==========
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
     application.add_handler(CommandHandler("trixlinksadd", trixlinksadd_command))
     application.add_handler(CommandHandler("trixlinksedit", trixlinksedit_command))
     application.add_handler(CommandHandler("trixlinksdelete", trixlinksdelete_command))
     
-    # Модерация
+    # ========== МОДЕРАЦИЯ - БАЗОВАЯ ==========
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
     application.add_handler(CommandHandler("mute", mute_command))
@@ -369,6 +397,8 @@ def main():
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("top", top_command))
     application.add_handler(CommandHandler("lastseen", lastseen_command))
+    
+    # ========== МОДЕРАЦИЯ - ПРОДВИНУТАЯ ==========
     application.add_handler(CommandHandler("del", del_command))
     application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(CommandHandler("slowmode", slowmode_command))
@@ -378,55 +408,108 @@ def main():
     application.add_handler(CommandHandler("tagall", tagall_command))
     application.add_handler(CommandHandler("admins", admins_command))
     
-    # Autopost
+    # ========== АВТОПОСТИНГ ==========
     application.add_handler(CommandHandler("autopost", autopost_command))
     application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
-    # Игровые команды (need/try/more)
-    versions = ["need", "try", "more"]
-    for ver in versions:
-        application.add_handler(CommandHandler(f"{ver}add", wordadd_command))
-        application.add_handler(CommandHandler(f"{ver}edit", wordedit_command))
-        application.add_handler(CommandHandler(f"{ver}start", wordon_command))
-        application.add_handler(CommandHandler(f"{ver}stop", wordoff_command))
-        application.add_handler(CommandHandler(f"{ver}info", wordinfo_command))
-        application.add_handler(CommandHandler(f"{ver}infoedit", wordinfoedit_command))
-        application.add_handler(CommandHandler(f"{ver}timeset", anstimeset_command))
-        application.add_handler(CommandHandler(f"{ver}game", gamesinfo_command))
-        application.add_handler(CommandHandler(f"{ver}guide", admgamesinfo_command))
-        application.add_handler(CommandHandler(f"{ver}slovo", game_say_command))
-        application.add_handler(CommandHandler(f"{ver}roll", roll_participant_command))
-        application.add_handler(CommandHandler(f"{ver}rollstart", roll_draw_command))
-        application.add_handler(CommandHandler(f"{ver}reroll", rollreset_command))
-        application.add_handler(CommandHandler(f"{ver}rollstat", rollstatus_command))
-        application.add_handler(CommandHandler(f"{ver}myroll", mynumber_command))
+    # ========== ИГРОВЫЕ КОМАНДЫ (ТРИ ВЕРСИИ: NEED, TRY, MORE) ==========
     
-    # Старые команды
+    # VERSION: NEED
+    application.add_handler(CommandHandler("needadd", wordadd_command))
+    application.add_handler(CommandHandler("neededit", wordedit_command))
+    application.add_handler(CommandHandler("needstart", wordon_command))
+    application.add_handler(CommandHandler("needstop", wordoff_command))
+    application.add_handler(CommandHandler("needinfo", wordinfo_command))
+    application.add_handler(CommandHandler("needinfoedit", wordinfoedit_command))
+    application.add_handler(CommandHandler("needtimeset", anstimeset_command))
+    application.add_handler(CommandHandler("needgame", gamesinfo_command))
+    application.add_handler(CommandHandler("needguide", admgamesinfo_command))
+    application.add_handler(CommandHandler("needslovo", game_say_command))
+    application.add_handler(CommandHandler("needroll", roll_participant_command))
+    application.add_handler(CommandHandler("needrollstart", roll_draw_command))
+    application.add_handler(CommandHandler("needreroll", rollreset_command))
+    application.add_handler(CommandHandler("needrollstat", rollstatus_command))
+    application.add_handler(CommandHandler("needmyroll", mynumber_command))
+    
+    # VERSION: TRY
+    application.add_handler(CommandHandler("tryadd", wordadd_command))
+    application.add_handler(CommandHandler("tryedit", wordedit_command))
+    application.add_handler(CommandHandler("trystart", wordon_command))
+    application.add_handler(CommandHandler("trystop", wordoff_command))
+    application.add_handler(CommandHandler("tryinfo", wordinfo_command))
+    application.add_handler(CommandHandler("tryinfoedit", wordinfoedit_command))
+    application.add_handler(CommandHandler("trytimeset", anstimeset_command))
+    application.add_handler(CommandHandler("trygame", gamesinfo_command))
+    application.add_handler(CommandHandler("tryguide", admgamesinfo_command))
+    application.add_handler(CommandHandler("tryslovo", game_say_command))
+    application.add_handler(CommandHandler("tryroll", roll_participant_command))
+    application.add_handler(CommandHandler("tryrollstart", roll_draw_command))
+    application.add_handler(CommandHandler("tryreroll", rollreset_command))
+    application.add_handler(CommandHandler("tryrollstat", rollstatus_command))
+    application.add_handler(CommandHandler("trymyroll", mynumber_command))
+    
+    # VERSION: MORE
+    application.add_handler(CommandHandler("moreadd", wordadd_command))
+    application.add_handler(CommandHandler("moreedit", wordedit_command))
+    application.add_handler(CommandHandler("morestart", wordon_command))
+    application.add_handler(CommandHandler("morestop", wordoff_command))
+    application.add_handler(CommandHandler("moreinfo", wordinfo_command))
+    application.add_handler(CommandHandler("moreinfoedit", wordinfoedit_command))
+    application.add_handler(CommandHandler("moretimeset", anstimeset_command))
+    application.add_handler(CommandHandler("moregame", gamesinfo_command))
+    application.add_handler(CommandHandler("moreguide", admgamesinfo_command))
+    application.add_handler(CommandHandler("moreslovo", game_say_command))
+    application.add_handler(CommandHandler("moreroll", roll_participant_command))
+    application.add_handler(CommandHandler("morerollstart", roll_draw_command))
+    application.add_handler(CommandHandler("morereroll", rollreset_command))
+    application.add_handler(CommandHandler("morerollstat", rollstatus_command))
+    application.add_handler(CommandHandler("moremyroll", mynumber_command))
+    
+    # СТАРЫЕ КОМАНДЫ (для обратной совместимости - работают как TRY)
     application.add_handler(CommandHandler("add", wordadd_command))
     application.add_handler(CommandHandler("edit", wordedit_command))
     application.add_handler(CommandHandler("wordclear", wordclear_command))
     
-    # Обработчики
+    # ========== ОБРАБОТЧИКИ CALLBACK И СООБЩЕНИЙ ==========
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
     application.add_handler(MessageHandler(
         filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
         handle_messages
     ))
     
+    # Обработчик ошибок
     application.add_error_handler(error_handler)
     
+    # Запуск автопостинга и статистики
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
+        logger.info("✅ Autopost service scheduled")
         print("✅ Autopost service enabled")
     else:
         print("⚪ Autopost service disabled")
     
+    # Запуск планировщика статистики
     loop.create_task(stats_scheduler.start())
+    logger.info("✅ Stats scheduler scheduled")
     print("✅ Stats scheduler enabled")
     
+    # Запуск бота
+    logger.info("🤖 TrixBot starting polling...")
     print("\n" + "="*50)
     print("🤖 TRIXBOT IS READY!")
     print("="*50)
+    print(f"📊 Stats interval: {Config.STATS_INTERVAL_HOURS} hours")
+    print(f"📢 Moderation group: {Config.MODERATION_GROUP_ID}")
+    print(f"🔧 Admin group: {Config.ADMIN_GROUP_ID}")
+    print(f"⏰ Cooldown: {Config.COOLDOWN_SECONDS // 3600} hours")
+    
+    if db_initialized:
+        print(f"💾 Database: ✅ Connected")
+    else:
+        print(f"💾 Database: ⚠️ Limited mode")
+    
+    print("="*50 + "\n")
+    
     application.run_polling(allowed_updates=["message", "callback_query"])
 
 if __name__ == '__main__':
