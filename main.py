@@ -427,7 +427,11 @@ def main():
     application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
-    
+    # НОВЫЕ КОМАНДЫ
+    application.add_handler(CommandHandler("social", social_command))
+    application.add_handler(CommandHandler("giveaway", giveaway_command))
+    application.add_handler(CommandHandler("bonus", bonus_command))
+    application.add_handler(CommandHandler("trixlinks", trixlinks_command))
     # НОВЫЕ КОМАНДЫ
     application.add_handler(CommandHandler("social", social_command))
     application.add_handler(CommandHandler("giveaway", giveaway_command))
