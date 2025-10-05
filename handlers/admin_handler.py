@@ -38,7 +38,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выберите раздел для управления:"
     )
     
-    await query.edit_message_text(
+    # Используем update.message.reply_text, а не query.edit_message_text
+    await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
