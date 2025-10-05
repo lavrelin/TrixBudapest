@@ -31,7 +31,7 @@ if os.path.exists(db_path):
         print(f"⚠️ Error checking database: {e}")
 
 # Import handlers
-from handlers.start_handler import start_command, help_command
+from handlers.start_handler import start_command
 from handlers.menu_handler import handle_menu_callback
 from handlers.publication_handler import (
     handle_publication_callback, handle_text_input, handle_media_input
@@ -44,13 +44,9 @@ from handlers.moderation_handler import (
 )
 from handlers.profile_handler import handle_profile_callback
 from handlers.basic_handler import (
-    id_command, whois_command, join_command, 
-    participants_command, report_command
+    id_command, participants_command, report_command
 )
-from handlers.link_handler import (
-    trixlinks_command, trixlinksadd_command, 
-    trixlinksedit_command, trixlinksdelete_command
-)
+from handlers.link_handler import trixlinks_command  # ИСПРАВЛЕНО: только trixlinks
 from handlers.moderation_commands import (
     ban_command, unban_command, mute_command, unmute_command,
     banlist_command, stats_command, top_command, lastseen_command
@@ -80,6 +76,7 @@ from handlers.stats_commands import (
     resetmsgcount_command, chatinfo_command
 )
 from handlers.help_commands import trix_command, handle_trix_callback
+from handlers.social_handler import social_command, giveaway_command  # НОВОЕ
 
 # Import services
 from services.autopost_service import autopost_service
