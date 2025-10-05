@@ -459,8 +459,10 @@ async def mynumber_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     number = roll_games[game_version]['participants'][user_id]['number']
     await update.message.reply_text(f"@{username}, ваш номер в {game_version.upper()}: {number}")
 
+# Фрагмент с исправленной функцией roll_draw_command
+
 async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Провести розыгрыш (админ)"""
+    """Провести розыгрыш (админ) - ИСПРАВЛЕНО: отправляет уведомления победителям"""
     if not Config.is_admin(update.effective_user.id):
         if update.effective_chat.type == 'private':
             await update.message.reply_text("❌ У вас нет прав для использования этой команды")
@@ -470,7 +472,9 @@ async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_version = get_game_version_from_command(command_text)
     
     if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text(f"📝 Использование: /{game_version}rollstart 3 (количество победителей 1-5)")
+        await update.message.reply_text(
+            f"📝 Использование: /{game_version}rollstart 3 (количество победителей 1-5)"
+        )
         return
     
     winners_count = min(5, max(1, int(context.args[0])))
@@ -484,29 +488,91 @@ async def roll_draw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
+    # Генерируем выигрышное число
     winning_number = random.randint(1, 9999)
     
+    # Создаем список участников с их номерами
     participants_list = [
         (user_id, data['username'], data['number'])
         for user_id, data in participants.items()
     ]
     
+    # Сортируем по близости к выигрышному числу
     participants_list.sort(key=lambda x: abs(x[2] - winning_number))
     
+    # Выбираем победителей
     winners = participants_list[:winners_count]
     
+    # Формируем текст с результатами
     winners_text = []
-    for user_id, username, number in winners:
-        winners_text.append(f"@{username} ({number})")
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    
+    for i, (user_id, username, number) in enumerate(winners, 1):
+        medal = medals.get(i, f"{i}.")
+        winners_text.append(f"{medal} @{username} (номер: {number}, разница: {abs(number - winning_number)})")
     
     result_text = (
         f"🎉 РЕЗУЛЬТАТЫ РОЗЫГРЫША {game_version.upper()}!\n\n"
-        f"🎲 Выигрышное число: {winning_number}\n\n"
-        f"🏆 Победители:\n" + "\n".join([f"{i+1}. {w}" for i, w in enumerate(winners_text)]) +
+        f"🎲 Выигрышное число: {winning_number}\n"
+        f"👥 Участвовало: {len(participants)}\n\n"
+        f"🏆 Победители:\n" + "\n".join(winners_text) +
         f"\n\n🎊 Поздравляем победителей!"
     )
     
+    # Отправляем результаты в чат/группу
     await update.message.reply_text(result_text)
+    
+    # ИСПРАВЛЕНИЕ: Отправляем уведомления КАЖДОМУ победителю
+    for i, (user_id, username, number) in enumerate(winners, 1):
+        try:
+            medal = medals.get(i, f"{i}.")
+            personal_message = (
+                f"🎉 **ПОЗДРАВЛЯЕМ!**\n\n"
+                f"{medal} Вы заняли {i} место в розыгрыше {game_version.upper()}!\n\n"
+                f"🎲 Выигрышное число: {winning_number}\n"
+                f"🎯 Ваш номер: {number}\n"
+                f"📊 Разница: {abs(number - winning_number)}\n\n"
+                f"🎁 Администратор свяжется с вами в ближайшее время для вручения приза!\n\n"
+                f"🏆 Следите за новыми розыгрышами!"
+            )
+            
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=personal_message,
+                parse_mode='Markdown'
+            )
+            
+            logger.info(f"Winner notification sent to {user_id} ({username}) for {game_version}")
+            
+        except Exception as e:
+            logger.error(f"Failed to notify winner {user_id} ({username}): {e}")
+            # Продолжаем даже если не удалось отправить одному победителю
+    
+    # ИСПРАВЛЕНИЕ: Отправляем уведомление админам через admin_notifications
+    try:
+        from services.admin_notifications import admin_notifications
+        
+        winners_for_admin = [
+            {
+                'username': username,
+                'user_id': user_id,
+                'number': number,
+                'difference': abs(number - winning_number)
+            }
+            for user_id, username, number in winners
+        ]
+        
+        await admin_notifications.notify_roll_winner(
+            game_version=game_version,
+            winners=winners_for_admin
+        )
+        
+        logger.info(f"Admin notification sent for {game_version} roll draw")
+        
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
+    
+    logger.info(f"Roll draw completed for {game_version}, {winners_count} winners notified")
 
 async def rollreset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Сбросить розыгрыш (админ)"""
