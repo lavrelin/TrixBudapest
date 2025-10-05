@@ -67,55 +67,45 @@ async def show_main_admin_menu(update_or_query, context: ContextTypes.DEFAULT_TY
 # Обработка callback'ов админ-панели
 # ===============================
 async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает все callback-запросы с префиксом admin:"""
+    """Обработчик callback для админ-панели"""
     query = update.callback_query
     await query.answer()
+    
     data = query.data.split(":")
     action = data[1] if len(data) > 1 else None
-
-    logger.info(f"[ADMIN] Received callback: {query.data}")
-
-    if action == "back":
-        await show_main_admin_menu(update, context)
-
-    elif action == "broadcast":
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
-        await query.edit_message_text(
-            text="📢 **Режим рассылки**\n\nОтправьте текст, который хотите разослать пользователям.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
-    elif action == "autopost":
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
-        await query.edit_message_text(
-            text="🔄 **Автопостинг**\n\nВыберите действие или настройку.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
+    
+    if action == "broadcast":
+        await show_broadcast_info(query, context)
+    
     elif action == "stats":
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
-        await query.edit_message_text(
-            text="📊 **Статистика**\n\nЗдесь появятся данные по активности.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
+        await show_stats(query, context)
+    
+    elif action == "users":
+        await show_users_info(query, context)
+    
+    elif action == "games":
+        await show_games_info(query, context)
+    
+    elif action == "settings":
+        await show_settings(query, context)
+    
+    elif action == "autopost":
+        await show_autopost_info(query, context)
+    
+    elif action == "logs":
+        await show_logs(query, context)
+    
     elif action == "help":
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
-        await query.edit_message_text(
-            text="ℹ️ **Помощь**\n\nЗдесь появится справочная информация для админов.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
-    else:
-        await query.edit_message_text(
-            text=f"⚠️ Неизвестная команда: `{query.data}`",
-            parse_mode="Markdown"
-        )
-
+        await show_admin_help(query, context)
+    
+    elif action == "confirm_broadcast":
+        await execute_broadcast(query, context)
+    
+    elif action == "cancel_broadcast":
+        await query.edit_message_text("❌ Рассылка отменена")
+    
+    elif action == "back":
+        await show_main_admin_menu(query, context)
 
 # ===============================
 # Рассылка сообщений
