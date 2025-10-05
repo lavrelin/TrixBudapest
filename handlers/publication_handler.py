@@ -50,7 +50,7 @@ async def start_post_creation(update: Update, context: ContextTypes.DEFAULT_TYPE
         'sell': '🕵🏽 Продам',
         'events': '🎉 События',
         'free': '🕵🏼 Отдам даром',
-        'important': '‼️ Важно',
+        'important': '✖️уе Будапешт',
         'other': '❔ Другое'
     }
     
