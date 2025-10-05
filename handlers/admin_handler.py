@@ -17,6 +17,11 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
 
+    await show_main_admin_menu(update, context)
+
+
+async def show_main_admin_menu(update_or_query, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает главное меню админки"""
     keyboard = [
         [
             InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
@@ -41,11 +46,75 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выберите раздел для управления:"
     )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    # Если вызов из callback'а
+    if hasattr(update_or_query, "callback_query"):
+        query = update_or_query.callback_query
+        await query.edit_message_text(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    else:
+        # Если вызов через /admin
+        await update_or_query.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+
+# ===============================
+# Обработка callback'ов админ-панели
+# ===============================
+async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает все callback-запросы с префиксом admin:"""
+    query = update.callback_query
+    await query.answer()
+    data = query.data.split(":")
+    action = data[1] if len(data) > 1 else None
+
+    logger.info(f"[ADMIN] Received callback: {query.data}")
+
+    if action == "back":
+        await show_main_admin_menu(update, context)
+
+    elif action == "broadcast":
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
+        await query.edit_message_text(
+            text="📢 **Режим рассылки**\n\nОтправьте текст, который хотите разослать пользователям.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif action == "autopost":
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
+        await query.edit_message_text(
+            text="🔄 **Автопостинг**\n\nВыберите действие или настройку.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif action == "stats":
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
+        await query.edit_message_text(
+            text="📊 **Статистика**\n\nЗдесь появятся данные по активности.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif action == "help":
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
+        await query.edit_message_text(
+            text="ℹ️ **Помощь**\n\nЗдесь появится справочная информация для админов.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    else:
+        await query.edit_message_text(
+            text=f"⚠️ Неизвестная команда: `{query.data}`",
+            parse_mode="Markdown"
+        )
 
 
 # ===============================
@@ -74,7 +143,6 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to send broadcast to {user_id}: {e}")
             failed_count += 1
 
-    # Уведомление о результате рассылки
     await admin_notifications.notify_broadcast(
         sent=sent_count,
         failed=failed_count,
@@ -141,7 +209,9 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 __all__ = [
     'admin_command',
     'execute_broadcast',
-    'say_command'
+    'say_command',
+    'handle_admin_callback',
+    'show_main_admin_menu'
 ]
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
