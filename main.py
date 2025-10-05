@@ -103,7 +103,6 @@ async def init_db_tables():
         logger.info("🔄 Initializing database...")
         print("🔄 Initializing database...")
         
-        # Проверяем тип БД
         db_url = Config.DATABASE_URL
         
         if db_url.startswith('postgres'):
@@ -116,12 +115,10 @@ async def init_db_tables():
             logger.warning(f"⚠️ Unknown database type: {db_url[:20]}...")
             print(f"⚠️ Unknown database type: {db_url[:20]}...")
         
-        # Импортируем models ДО инициализации БД
         from models import Base, User, Post, Gender, PostStatus
         logger.info(f"✅ Loaded models: User, Post, Gender, PostStatus")
         print(f"✅ Loaded models: User, Post")
         
-        # Инициализируем БД
         await db.init()
         
         if db.engine is None or db.session_maker is None:
@@ -132,7 +129,6 @@ async def init_db_tables():
         logger.info("✅ Database engine created")
         print("✅ Database engine created")
         
-        # Создаём все таблицы
         try:
             logger.info("🔨 Creating tables...")
             print("🔨 Creating tables...")
@@ -148,7 +144,6 @@ async def init_db_tables():
             print(f"❌ Error creating tables: {table_error}")
             return False
         
-        # Проверяем таблицы
         try:
             async with db.get_session() as session:
                 from sqlalchemy import text
@@ -184,6 +179,99 @@ async def init_db_tables():
         print(f"❌ Database error: {e}")
         return False
 
+# ИСПРАВЛЕНИЕ: Декоратор для игнорирования команд в Budapest Chat
+def ignore_budapest_chat_commands(func):
+    """Декоратор для игнорирования команд в Budapest Chat"""
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        # Если команда из Budapest Chat
+        if chat_id == Config.BUDAPEST_CHAT_ID:
+            # Удаляем команду
+            try:
+                await update.message.delete()
+                logger.info(f"Deleted command {func.__name__} from Budapest chat by user {user_id}")
+            except Exception as e:
+                logger.error(f"Could not delete command: {e}")
+            
+            # Отвечаем в ЛС если это не админ
+            if not Config.is_moderator(user_id):
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text="⚠️ Команды в Будапешт-чате не работают.\n"
+                             "Используйте команды в личных сообщениях с ботом: @TrixLiveBot"
+                    )
+                except Exception as e:
+                    logger.error(f"Could not send PM to user {user_id}: {e}")
+            
+            return  # Прерываем выполнение команды
+        
+        # Если не Budapest Chat - выполняем команду
+        return await func(update, context)
+    
+    return wrapper
+
+# Оборачиваем все команды декоратором
+start_command = ignore_budapest_chat_commands(start_command)
+help_command = ignore_budapest_chat_commands(help_command)
+trix_command = ignore_budapest_chat_commands(trix_command)
+id_command = ignore_budapest_chat_commands(id_command)
+hp_command = ignore_budapest_chat_commands(hp_command)
+whois_command = ignore_budapest_chat_commands(whois_command)
+join_command = ignore_budapest_chat_commands(join_command)
+participants_command = ignore_budapest_chat_commands(participants_command)
+report_command = ignore_budapest_chat_commands(report_command)
+admin_command = ignore_budapest_chat_commands(admin_command)
+say_command = ignore_budapest_chat_commands(say_command)
+broadcast_command = ignore_budapest_chat_commands(broadcast_command)
+sendstats_command = ignore_budapest_chat_commands(sendstats_command)
+channelstats_command = ignore_budapest_chat_commands(channelstats_command)
+fullstats_command = ignore_budapest_chat_commands(fullstats_command)
+resetmsgcount_command = ignore_budapest_chat_commands(resetmsgcount_command)
+chatinfo_command = ignore_budapest_chat_commands(chatinfo_command)
+trixlinks_command = ignore_budapest_chat_commands(trixlinks_command)
+trixlinksadd_command = ignore_budapest_chat_commands(trixlinksadd_command)
+trixlinksedit_command = ignore_budapest_chat_commands(trixlinksedit_command)
+trixlinksdelete_command = ignore_budapest_chat_commands(trixlinksdelete_command)
+ban_command = ignore_budapest_chat_commands(ban_command)
+unban_command = ignore_budapest_chat_commands(unban_command)
+mute_command = ignore_budapest_chat_commands(mute_command)
+unmute_command = ignore_budapest_chat_commands(unmute_command)
+banlist_command = ignore_budapest_chat_commands(banlist_command)
+stats_command = ignore_budapest_chat_commands(stats_command)
+top_command = ignore_budapest_chat_commands(top_command)
+lastseen_command = ignore_budapest_chat_commands(lastseen_command)
+del_command = ignore_budapest_chat_commands(del_command)
+purge_command = ignore_budapest_chat_commands(purge_command)
+slowmode_command = ignore_budapest_chat_commands(slowmode_command)
+noslowmode_command = ignore_budapest_chat_commands(noslowmode_command)
+lockdown_command = ignore_budapest_chat_commands(lockdown_command)
+antiinvite_command = ignore_budapest_chat_commands(antiinvite_command)
+tagall_command = ignore_budapest_chat_commands(tagall_command)
+admins_command = ignore_budapest_chat_commands(admins_command)
+autopost_command = ignore_budapest_chat_commands(autopost_command)
+autopost_test_command = ignore_budapest_chat_commands(autopost_test_command)
+
+# Game commands
+wordadd_command = ignore_budapest_chat_commands(wordadd_command)
+wordedit_command = ignore_budapest_chat_commands(wordedit_command)
+wordclear_command = ignore_budapest_chat_commands(wordclear_command)
+wordon_command = ignore_budapest_chat_commands(wordon_command)
+wordoff_command = ignore_budapest_chat_commands(wordoff_command)
+wordinfo_command = ignore_budapest_chat_commands(wordinfo_command)
+wordinfoedit_command = ignore_budapest_chat_commands(wordinfoedit_command)
+anstimeset_command = ignore_budapest_chat_commands(anstimeset_command)
+gamesinfo_command = ignore_budapest_chat_commands(gamesinfo_command)
+admgamesinfo_command = ignore_budapest_chat_commands(admgamesinfo_command)
+game_say_command = ignore_budapest_chat_commands(game_say_command)
+roll_participant_command = ignore_budapest_chat_commands(roll_participant_command)
+roll_draw_command = ignore_budapest_chat_commands(roll_draw_command)
+rollreset_command = ignore_budapest_chat_commands(rollreset_command)
+rollstatus_command = ignore_budapest_chat_commands(rollstatus_command)
+mynumber_command = ignore_budapest_chat_commands(mynumber_command)
+
 async def handle_all_callbacks(update: Update, context):
     """Роутер для всех callback запросов"""
     query = update.callback_query
@@ -193,7 +281,7 @@ async def handle_all_callbacks(update: Update, context):
     
     # ✅ КРИТИЧНО: Игнорируем callback из Будапешт чата
     if query.message and query.message.chat.id == Config.BUDAPEST_CHAT_ID:
-        await query.answer("⚠️ Бот не работает в этом чате", show_alert=True)
+        await query.answer("⚠️ Бот не работает в этом чате. Используйте @TrixLiveBot в личных сообщениях", show_alert=True)
         logger.info(f"Ignored callback from Budapest chat: {query.data}")
         return
     
@@ -235,15 +323,10 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    # ✅ КРИТИЧЕСКИ ВАЖНО: игнорируем ВСЕ из Будапешт чата
+    # ✅ КРИТИЧЕСКИ ВАЖНО: игнорируем ВСЕ из Будапешт чата КРОМЕ подсчета
     if chat_id == Config.BUDAPEST_CHAT_ID:
-        # Если это команда - удаляем
-        if update.message and update.message.text and update.message.text.startswith('/'):
-            try:
-                await update.message.delete()
-                logger.info(f"Deleted command from Budapest chat: {update.message.text}")
-            except Exception as e:
-                logger.error(f"Could not delete: {e}")
+        # Подсчитываем сообщения
+        channel_stats.increment_message_count(chat_id)
         # Полностью игнорируем обработку
         return
     
@@ -320,11 +403,9 @@ def main():
         logger.error("❌ BOT_TOKEN not found!")
         return
     
-    # Создаем event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    # Инициализируем базу данных
     logger.info("🚀 Starting TrixBot...")
     print("🚀 Starting TrixBot...")
     print(f"📊 Database: {Config.DATABASE_URL[:30]}...")
@@ -338,10 +419,8 @@ def main():
     else:
         print("✅ Database connected")
     
-    # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
     
-    # Настройка сервисов
     autopost_service.set_bot(application.bot)
     admin_notifications.set_bot(application.bot)
     channel_stats.set_bot(application.bot)
@@ -349,38 +428,33 @@ def main():
     
     logger.info("✅ Services initialized")
     
-    # ========== ОСНОВНЫЕ КОМАНДЫ ==========
+    # Регистрируем все команды (уже обернутые декоратором)
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
     
-    # ========== БАЗОВЫЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("whois", whois_command))
     application.add_handler(CommandHandler("join", join_command))
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
     
-    # ========== АДМИНСКИЕ КОМАНДЫ ==========
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("say", say_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("sendstats", sendstats_command))
     
-    # ========== СТАТИСТИКА КАНАЛОВ ==========
     application.add_handler(CommandHandler("channelstats", channelstats_command))
     application.add_handler(CommandHandler("fullstats", fullstats_command))
     application.add_handler(CommandHandler("resetmsgcount", resetmsgcount_command))
     application.add_handler(CommandHandler("chatinfo", chatinfo_command))
     
-    # ========== ССЫЛКИ ==========
     application.add_handler(CommandHandler("trixlinks", trixlinks_command))
     application.add_handler(CommandHandler("trixlinksadd", trixlinksadd_command))
     application.add_handler(CommandHandler("trixlinksedit", trixlinksedit_command))
     application.add_handler(CommandHandler("trixlinksdelete", trixlinksdelete_command))
     
-    # ========== МОДЕРАЦИЯ - БАЗОВАЯ ==========
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
     application.add_handler(CommandHandler("mute", mute_command))
@@ -390,7 +464,6 @@ def main():
     application.add_handler(CommandHandler("top", top_command))
     application.add_handler(CommandHandler("lastseen", lastseen_command))
     
-    # ========== МОДЕРАЦИЯ - ПРОДВИНУТАЯ ==========
     application.add_handler(CommandHandler("del", del_command))
     application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(CommandHandler("slowmode", slowmode_command))
@@ -400,79 +473,39 @@ def main():
     application.add_handler(CommandHandler("tagall", tagall_command))
     application.add_handler(CommandHandler("admins", admins_command))
     
-    # ========== АВТОПОСТИНГ ==========
     application.add_handler(CommandHandler("autopost", autopost_command))
     application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
-    # ========== ИГРОВЫЕ КОМАНДЫ (ТРИ ВЕРСИИ: NEED, TRY, MORE) ==========
+    # Игровые команды для всех версий
+    for version in ['need', 'try', 'more']:
+        application.add_handler(CommandHandler(f"{version}add", wordadd_command))
+        application.add_handler(CommandHandler(f"{version}edit", wordedit_command))
+        application.add_handler(CommandHandler(f"{version}start", wordon_command))
+        application.add_handler(CommandHandler(f"{version}stop", wordoff_command))
+        application.add_handler(CommandHandler(f"{version}info", wordinfo_command))
+        application.add_handler(CommandHandler(f"{version}infoedit", wordinfoedit_command))
+        application.add_handler(CommandHandler(f"{version}timeset", anstimeset_command))
+        application.add_handler(CommandHandler(f"{version}game", gamesinfo_command))
+        application.add_handler(CommandHandler(f"{version}guide", admgamesinfo_command))
+        application.add_handler(CommandHandler(f"{version}slovo", game_say_command))
+        application.add_handler(CommandHandler(f"{version}roll", roll_participant_command))
+        application.add_handler(CommandHandler(f"{version}rollstart", roll_draw_command))
+        application.add_handler(CommandHandler(f"{version}reroll", rollreset_command))
+        application.add_handler(CommandHandler(f"{version}rollstat", rollstatus_command))
+        application.add_handler(CommandHandler(f"{version}myroll", mynumber_command))
     
-    # VERSION: NEED
-    application.add_handler(CommandHandler("needadd", wordadd_command))
-    application.add_handler(CommandHandler("neededit", wordedit_command))
-    application.add_handler(CommandHandler("needstart", wordon_command))
-    application.add_handler(CommandHandler("needstop", wordoff_command))
-    application.add_handler(CommandHandler("needinfo", wordinfo_command))
-    application.add_handler(CommandHandler("needinfoedit", wordinfoedit_command))
-    application.add_handler(CommandHandler("needtimeset", anstimeset_command))
-    application.add_handler(CommandHandler("needgame", gamesinfo_command))
-    application.add_handler(CommandHandler("needguide", admgamesinfo_command))
-    application.add_handler(CommandHandler("needslovo", game_say_command))
-    application.add_handler(CommandHandler("needroll", roll_participant_command))
-    application.add_handler(CommandHandler("needrollstart", roll_draw_command))
-    application.add_handler(CommandHandler("needreroll", rollreset_command))
-    application.add_handler(CommandHandler("needrollstat", rollstatus_command))
-    application.add_handler(CommandHandler("needmyroll", mynumber_command))
-    
-    # VERSION: TRY
-    application.add_handler(CommandHandler("tryadd", wordadd_command))
-    application.add_handler(CommandHandler("tryedit", wordedit_command))
-    application.add_handler(CommandHandler("trystart", wordon_command))
-    application.add_handler(CommandHandler("trystop", wordoff_command))
-    application.add_handler(CommandHandler("tryinfo", wordinfo_command))
-    application.add_handler(CommandHandler("tryinfoedit", wordinfoedit_command))
-    application.add_handler(CommandHandler("trytimeset", anstimeset_command))
-    application.add_handler(CommandHandler("trygame", gamesinfo_command))
-    application.add_handler(CommandHandler("tryguide", admgamesinfo_command))
-    application.add_handler(CommandHandler("tryslovo", game_say_command))
-    application.add_handler(CommandHandler("tryroll", roll_participant_command))
-    application.add_handler(CommandHandler("tryrollstart", roll_draw_command))
-    application.add_handler(CommandHandler("tryreroll", rollreset_command))
-    application.add_handler(CommandHandler("tryrollstat", rollstatus_command))
-    application.add_handler(CommandHandler("trymyroll", mynumber_command))
-    
-    # VERSION: MORE
-    application.add_handler(CommandHandler("moreadd", wordadd_command))
-    application.add_handler(CommandHandler("moreedit", wordedit_command))
-    application.add_handler(CommandHandler("morestart", wordon_command))
-    application.add_handler(CommandHandler("morestop", wordoff_command))
-    application.add_handler(CommandHandler("moreinfo", wordinfo_command))
-    application.add_handler(CommandHandler("moreinfoedit", wordinfoedit_command))
-    application.add_handler(CommandHandler("moretimeset", anstimeset_command))
-    application.add_handler(CommandHandler("moregame", gamesinfo_command))
-    application.add_handler(CommandHandler("moreguide", admgamesinfo_command))
-    application.add_handler(CommandHandler("moreslovo", game_say_command))
-    application.add_handler(CommandHandler("moreroll", roll_participant_command))
-    application.add_handler(CommandHandler("morerollstart", roll_draw_command))
-    application.add_handler(CommandHandler("morereroll", rollreset_command))
-    application.add_handler(CommandHandler("morerollstat", rollstatus_command))
-    application.add_handler(CommandHandler("moremyroll", mynumber_command))
-    
-    # СТАРЫЕ КОМАНДЫ (обратная совместимость)
     application.add_handler(CommandHandler("add", wordadd_command))
     application.add_handler(CommandHandler("edit", wordedit_command))
     application.add_handler(CommandHandler("wordclear", wordclear_command))
     
-    # ========== ОБРАБОТЧИКИ CALLBACK И СООБЩЕНИЙ ==========
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
     application.add_handler(MessageHandler(
         filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
         handle_messages
     ))
     
-    # Обработчик ошибок
     application.add_error_handler(error_handler)
     
-    # Запуск автопостинга и статистики
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
         print("✅ Autopost enabled")
@@ -480,7 +513,6 @@ def main():
     loop.create_task(stats_scheduler.start())
     print("✅ Stats scheduler enabled")
     
-    # Запуск бота
     logger.info("🤖 TrixBot starting...")
     print("\n" + "="*50)
     print("🤖 TRIXBOT IS READY!")
@@ -488,7 +520,7 @@ def main():
     print(f"📊 Stats interval: {Config.STATS_INTERVAL_HOURS}h")
     print(f"📢 Moderation: {Config.MODERATION_GROUP_ID}")
     print(f"🔧 Admin group: {Config.ADMIN_GROUP_ID}")
-    print(f"🚫 Budapest chat (ignore): {Config.BUDAPEST_CHAT_ID}")
+    print(f"🚫 Budapest chat (IGNORE ALL): {Config.BUDAPEST_CHAT_ID}")
     print(f"⏰ Cooldown: {Config.COOLDOWN_SECONDS // 3600}h")
     
     if db_initialized:
