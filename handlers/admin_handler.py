@@ -86,14 +86,13 @@ async def execute_broadcast(query, context):
     # Очищаем данные
     context.user_data.pop('broadcast_text', None)
 
-# Экспорт функций
-__all__ = [
-    'admin_command',
-    'say_command',
-    'broadcast_command',
-    'sendstats_command',
-    'handle_admin_callback'
-]="admin:logs"),
+
+# Пример функции с клавиатурой (восстановлено корректно)
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Главное меню администратора"""
+    keyboard = [
+        [
+            InlineKeyboardButton("📊 Логи", callback_data="admin:logs"),
             InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
         ]
     ]
@@ -108,6 +107,7 @@ __all__ = [
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
+
 
 async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отправить сообщение от имени бота в ТЕКУЩИЙ чат"""
@@ -128,20 +128,13 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     
     try:
-        # Удаляем команду пользователя
         await update.message.delete()
     except Exception as e:
         logger.warning(f"Could not delete say command: {e}")
     
-    # ИСПРАВЛЕНИЕ: Отправляем сообщение от имени бота в ТЕКУЩИЙ чат
     try:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=message_text
-        )
+        await context.bot.send_message(chat_id=chat_id, text=message_text)
         logger.info(f"Say command used by {update.effective_user.username} in chat {chat_id}: {message_text[:50]}")
-        
-        # Отправляем подтверждение админу в ЛС
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
@@ -149,13 +142,22 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             pass
-            
     except Exception as e:
         logger.error(f"Error in say command: {e}")
         await context.bot.send_message(
             chat_id=update.effective_user.id,
             text=f"❌ Ошибка отправки сообщения: {e}"
         )
+
+
+# Экспорт функций
+__all__ = [
+    'admin_command',
+    'say_command',
+    'broadcast_command',
+    'sendstats_command',
+    'handle_admin_callback'
+]
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Рассылка сообщения всем пользователям"""
