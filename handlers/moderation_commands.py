@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from telegram import Update
+from telegram import Update, ChatPermissions
 from telegram.ext import ContextTypes
 from config import Config
 from data.user_data import (
@@ -133,9 +133,6 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"User {target_id} banned by {update.effective_user.id}")
 
-# -------------------------------------------------------------
-# 🔓 UNBAN — снятие блокировки
-# -------------------------------------------------------------
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Разбанить пользователя"""
     if not Config.is_moderator(update.effective_user.id):
@@ -188,9 +185,6 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"User {target_id} unbanned by {update.effective_user.id}")
 
-# -------------------------------------------------------------
-# 🔇 MUTE — ограничение отправки сообщений
-# -------------------------------------------------------------
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Замутить пользователя - реальный мут в Telegram"""
     if not Config.is_moderator(update.effective_user.id):
@@ -299,9 +293,6 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"User {target_id} muted by {update.effective_user.id} for {time_str}")
 
-# -------------------------------------------------------------
-# 🔊 UNMUTE — снятие ограничения
-# -------------------------------------------------------------
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Размутить пользователя"""
     if not Config.is_moderator(update.effective_user.id):
@@ -351,9 +342,6 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"User {target_id} unmuted by {update.effective_user.id}")
 
-# -------------------------------------------------------------
-# 📋 BANLIST — список забаненных пользователей
-# -------------------------------------------------------------
 async def banlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Список забаненных пользователей"""
     if not Config.is_moderator(update.effective_user.id):
