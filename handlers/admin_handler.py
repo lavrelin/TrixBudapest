@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
 from services.admin_notifications import admin_notifications
 from data.user_data import user_data
-import logging
 
 logger = logging.getLogger(__name__)
 
+# ===============================
+# Главное меню администратора
+# ===============================
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Админ-панель управления ботом"""
+    """Отображение админ-панели"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     keyboard = [
         [
             InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
@@ -32,107 +35,88 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
         ]
     ]
-    
+
     text = (
         "🔧 **АДМИН-ПАНЕЛЬ**\n\n"
         "Выберите раздел для управления:"
     )
-    
-    # Используем update.message.reply_text, а не query.edit_message_text
+
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-async def execute_broadcast(query, context):
-    """Выполнить рассылку"""
+
+# ===============================
+# Рассылка сообщений
+# ===============================
+async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выполнить рассылку (через CallbackQuery)"""
+    query = update.callback_query
+    await query.answer()
+
     broadcast_text = context.user_data.get('broadcast_text')
-    
     if not broadcast_text:
         await query.edit_message_text("❌ Текст рассылки не найден. Попробуйте снова.")
         return
-    
+
     await query.edit_message_text("📢 Начинаю рассылку...")
-    
+
     sent_count = 0
     failed_count = 0
-    
+
     for user_id in user_data.keys():
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=broadcast_text
-            )
+            await context.bot.send_message(chat_id=user_id, text=broadcast_text)
             sent_count += 1
         except Exception as e:
             logger.error(f"Failed to send broadcast to {user_id}: {e}")
             failed_count += 1
-    
+
     # Уведомление о результате рассылки
     await admin_notifications.notify_broadcast(
         sent=sent_count,
         failed=failed_count,
         moderator=query.from_user.username or str(query.from_user.id)
     )
-    
+
     result_text = (
         f"✅ **Рассылка завершена!**\n\n"
         f"📤 Отправлено: {sent_count}\n"
         f"❌ Не удалось: {failed_count}"
     )
-    
+
     await query.edit_message_text(result_text, parse_mode='Markdown')
-    
-    # Очищаем данные
     context.user_data.pop('broadcast_text', None)
 
 
-# Пример функции с клавиатурой (восстановлено корректно)
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Главное меню администратора"""
-    keyboard = [
-        [
-            InlineKeyboardButton("📊 Логи", callback_data="admin:logs"),
-            InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
-        ]
-    ]
-    
-    text = (
-        "🔧 **АДМИН-ПАНЕЛЬ**\n\n"
-        "Выберите раздел для управления:"
-    )
-    
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-
+# ===============================
+# Команда /say
+# ===============================
 async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправить сообщение от имени бота в ТЕКУЩИЙ чат"""
+    """Отправка сообщения от имени бота в текущий чат"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
-    
+
     if not context.args:
         await update.message.reply_text(
             "📝 **Использование:**\n"
             "`/say текст сообщения`\n\n"
-            "Бот отправит ваше сообщение в ЭТОТ чат",
+            "Бот отправит ваше сообщение в этот чат",
             parse_mode='Markdown'
         )
         return
-    
+
     message_text = ' '.join(context.args)
     chat_id = update.effective_chat.id
-    
+
     try:
         await update.message.delete()
     except Exception as e:
         logger.warning(f"Could not delete say command: {e}")
-    
+
     try:
         await context.bot.send_message(chat_id=chat_id, text=message_text)
         logger.info(f"Say command used by {update.effective_user.username} in chat {chat_id}: {message_text[:50]}")
@@ -141,7 +125,7 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=update.effective_user.id,
                 text=f"✅ Сообщение отправлено в чат {chat_id}"
             )
-        except:
+        except Exception:
             pass
     except Exception as e:
         logger.error(f"Error in say command: {e}")
@@ -151,13 +135,13 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ===============================
 # Экспорт функций
+# ===============================
 __all__ = [
     'admin_command',
-    'say_command',
-    'broadcast_command',
-    'sendstats_command',
-    'handle_admin_callback'
+    'execute_broadcast',
+    'say_command'
 ]
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
