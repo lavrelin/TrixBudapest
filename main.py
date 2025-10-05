@@ -253,8 +253,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     waiting_for = context.user_data.get('waiting_for')
     
-    logger.info(f"Message from user {user_id}, waiting_for: {waiting_for}")
-    
     try:
         # Проверка на игровой ввод
         if await handle_game_text_input(update, context):
@@ -304,22 +302,15 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Error handling message: {e}", exc_info=True)
-        try:
-            await update.message.reply_text(
-                "❌ Произошла ошибка при обработке сообщения"
-            )
-        except:
-            pass
+        await update.message.reply_text("❌ Ошибка обработки")
 
 async def error_handler(update: object, context):
     """Обработчик ошибок"""
-    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+    logger.error(f"Error: {context.error}", exc_info=context.error)
     
     if isinstance(update, Update) and update.effective_message:
         try:
-            await update.effective_message.reply_text(
-                "❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору."
-            )
+            await update.effective_message.reply_text("❌ Произошла ошибка")
         except:
             pass
 
@@ -334,17 +325,18 @@ def main():
     asyncio.set_event_loop(loop)
     
     # Инициализируем базу данных
-    logger.info("🚀 Starting TrixBot initialization...")
+    logger.info("🚀 Starting TrixBot...")
     print("🚀 Starting TrixBot...")
-    print(f"📊 Database URL: {Config.DATABASE_URL[:30]}...")
+    print(f"📊 Database: {Config.DATABASE_URL[:30]}...")
+    print(f"🚫 Budapest chat ID: {Config.BUDAPEST_CHAT_ID}")
     
     db_initialized = loop.run_until_complete(init_db_tables())
     
     if not db_initialized:
-        logger.warning("⚠️ Bot starting without database functionality")
-        print("⚠️ Database not available - bot running in limited mode")
+        logger.warning("⚠️ Bot starting without database")
+        print("⚠️ Database not available")
     else:
-        print("✅ Database connected and initialized")
+        print("✅ Database connected")
     
     # Инициализация приложения
     application = Application.builder().token(Config.BOT_TOKEN).build()
@@ -465,7 +457,7 @@ def main():
     application.add_handler(CommandHandler("morerollstat", rollstatus_command))
     application.add_handler(CommandHandler("moremyroll", mynumber_command))
     
-    # СТАРЫЕ КОМАНДЫ (для обратной совместимости - работают как TRY)
+    # СТАРЫЕ КОМАНДЫ (обратная совместимость)
     application.add_handler(CommandHandler("add", wordadd_command))
     application.add_handler(CommandHandler("edit", wordedit_command))
     application.add_handler(CommandHandler("wordclear", wordclear_command))
@@ -483,25 +475,21 @@ def main():
     # Запуск автопостинга и статистики
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
-        logger.info("✅ Autopost service scheduled")
-        print("✅ Autopost service enabled")
-    else:
-        print("⚪ Autopost service disabled")
+        print("✅ Autopost enabled")
     
-    # Запуск планировщика статистики
     loop.create_task(stats_scheduler.start())
-    logger.info("✅ Stats scheduler scheduled")
     print("✅ Stats scheduler enabled")
     
     # Запуск бота
-    logger.info("🤖 TrixBot starting polling...")
+    logger.info("🤖 TrixBot starting...")
     print("\n" + "="*50)
     print("🤖 TRIXBOT IS READY!")
     print("="*50)
-    print(f"📊 Stats interval: {Config.STATS_INTERVAL_HOURS} hours")
-    print(f"📢 Moderation group: {Config.MODERATION_GROUP_ID}")
+    print(f"📊 Stats interval: {Config.STATS_INTERVAL_HOURS}h")
+    print(f"📢 Moderation: {Config.MODERATION_GROUP_ID}")
     print(f"🔧 Admin group: {Config.ADMIN_GROUP_ID}")
-    print(f"⏰ Cooldown: {Config.COOLDOWN_SECONDS // 3600} hours")
+    print(f"🚫 Budapest chat (ignore): {Config.BUDAPEST_CHAT_ID}")
+    print(f"⏰ Cooldown: {Config.COOLDOWN_SECONDS // 3600}h")
     
     if db_initialized:
         print(f"💾 Database: ✅ Connected")
