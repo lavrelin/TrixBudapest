@@ -24,6 +24,7 @@ def admin_only(func):
     
     return wrapper
 
+
 def moderator_only(func):
     """Decorator to restrict command to moderators and admins"""
     @wraps(func)
@@ -41,24 +42,27 @@ def moderator_only(func):
     
     return wrapper
 
+
 def ignore_budapest_chat(func):
     """Decorator to ignore commands from Budapest chat"""
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         chat_id = update.effective_chat.id
         
-        # Игнорируем команды из Будапешт чата
+        # Игнорируем команды из Будапешт-чата
         if chat_id == Config.BUDAPEST_CHAT_ID:
-            try:
-                await update.message.delete()
-                logger.info(f"Ignored command {func.__name__} from Budapest chat")
-            except Exception as e:
-                logger.error(f"Could not delete message: {e}")
-            return
+            if update.message and update.message.text and update.message.text.startswith('/'):
+                try:
+                    await update.message.delete()
+                    logger.info(f"Ignored command {func.__name__} from Budapest chat")
+                except Exception as e:
+                    logger.error(f"Could not delete message: {e}")
+                return
         
         return await func(update, context, *args, **kwargs)
     
     return wrapper
+
 
 def check_user_banned(func):
     """Decorator to check if user is banned"""
@@ -85,6 +89,7 @@ def check_user_banned(func):
         return await func(update, context, *args, **kwargs)
     
     return wrapper
+
 
 def check_user_muted(func):
     """Decorator to check if user is muted"""
