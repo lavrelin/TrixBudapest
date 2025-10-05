@@ -75,7 +75,6 @@ from handlers.stats_commands import (
     channelstats_command, fullstats_command, 
     resetmsgcount_command, chatinfo_command
 )
-from handlers.help_commands import trix_command, handle_trix_callback
 from handlers.social_handler import social_command, giveaway_command  # НОВОЕ
 
 # Import services
