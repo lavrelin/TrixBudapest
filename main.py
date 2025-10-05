@@ -75,7 +75,9 @@ from handlers.stats_commands import (
     channelstats_command, fullstats_command, 
     resetmsgcount_command, chatinfo_command
 )
+from handlers.help_commands import trix_command, handle_trix_callback
 from handlers.social_handler import social_command, giveaway_command  # НОВОЕ
+from handlers.bonus_handler import bonus_command  # НОВОЕ
 
 # Import services
 from services.autopost_service import autopost_service
@@ -211,6 +213,7 @@ def ignore_budapest_chat_commands(func):
 
 # Оборачиваем все команды декоратором
 start_command = ignore_budapest_chat_commands(start_command)
+trix_command = ignore_budapest_chat_commands(trix_command)
 id_command = ignore_budapest_chat_commands(id_command)
 hp_command = ignore_budapest_chat_commands(hp_command)
 participants_command = ignore_budapest_chat_commands(participants_command)
@@ -223,6 +226,9 @@ channelstats_command = ignore_budapest_chat_commands(channelstats_command)
 fullstats_command = ignore_budapest_chat_commands(fullstats_command)
 resetmsgcount_command = ignore_budapest_chat_commands(resetmsgcount_command)
 chatinfo_command = ignore_budapest_chat_commands(chatinfo_command)
+trixlinks_command = ignore_budapest_chat_commands(trixlinks_command)
+social_command = ignore_budapest_chat_commands(social_command)  # НОВОЕ
+giveaway_command = ignore_budapest_chat_commands(giveaway_command)  # НОВОЕ
 ban_command = ignore_budapest_chat_commands(ban_command)
 unban_command = ignore_budapest_chat_commands(unban_command)
 mute_command = ignore_budapest_chat_commands(mute_command)
@@ -418,8 +424,14 @@ def main():
     
     # Регистрируем все команды (уже обернутые декоратором)
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
+    
+    # НОВЫЕ КОМАНДЫ
+    application.add_handler(CommandHandler("social", social_command))
+    application.add_handler(CommandHandler("giveaway", giveaway_command))
+    application.add_handler(CommandHandler("trixlinks", trixlinks_command))
     
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
@@ -434,7 +446,7 @@ def main():
     application.add_handler(CommandHandler("resetmsgcount", resetmsgcount_command))
     application.add_handler(CommandHandler("chatinfo", chatinfo_command))
     
-    application.add_handler(CommandHandler("trixlinks", trixlinks_command))
+    # УДАЛЕНЫ: trixlinksadd, trixlinksedit, trixlinksdelete
     
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
