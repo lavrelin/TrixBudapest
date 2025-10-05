@@ -94,7 +94,7 @@ async def show_announcements_menu(update: Update, context: ContextTypes.DEFAULT_
         ],
         [
             InlineKeyboardButton("🫧 Ищу ", callback_data="pub:cat:other"),
-            InlineKeyboardButton("⭐️ О себе", callback_data="pub:cat:events")
+            InlineKeyboardButton("✖️уё Будапешт", callback_data="pub:cat:events")
         ],
         [InlineKeyboardButton("🔑 Назад", callback_data="menu:budapest")]
     ]
@@ -217,7 +217,7 @@ async def start_category_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     text = (
         f"{category} → {subcategory}{anon_text}\n\n"
-       "✏️ Отправьте текст вашей публикации. Добавьте фото или видео файлы.\n"
+       "🤳 Отправьте текст вашей публикации. Добавьте фото или видео файлы.\n"
     )
     
     try:
