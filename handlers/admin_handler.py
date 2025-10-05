@@ -500,17 +500,20 @@ async def show_admin_help(query, context):
 async def show_main_admin_menu(query, context):
     """Показать главное меню админки"""
     keyboard = [
-        [
-            InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
-            InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")
-        ],
-        [
-            InlineKeyboardButton("👥 Пользователи", callback_data="admin:users"),
-            InlineKeyboardButton("🎮 Игры", callback_data="admin:games")
-        ],
-        [
-            InlineKeyboardButton("⚙️ Настройки", callback_data="admin:settings"),
-            InlineKeyboardButton("🔄 Автопост", callback_data="admin:autopost")
-        ],
-        [
-            InlineKeyboardButton("📝 Логи", callback_data
+    [
+        InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
+        InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")
+    ],
+    [
+        InlineKeyboardButton("👥 Пользователи", callback_data="admin:users"),
+        InlineKeyboardButton("🎮 Игры", callback_data="admin:games")
+    ],
+    [
+        InlineKeyboardButton("⚙️ Настройки", callback_data="admin:settings"),
+        InlineKeyboardButton("🔄 Автопост", callback_data="admin:autopost")
+    ],
+    [
+        InlineKeyboardButton("📝 Логи", callback_data="admin:logs"),
+        InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
+    ]
+]
