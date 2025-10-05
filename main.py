@@ -229,6 +229,7 @@ chatinfo_command = ignore_budapest_chat_commands(chatinfo_command)
 trixlinks_command = ignore_budapest_chat_commands(trixlinks_command)
 social_command = ignore_budapest_chat_commands(social_command)  # НОВОЕ
 giveaway_command = ignore_budapest_chat_commands(giveaway_command)  # НОВОЕ
+bonus_command = ignore_budapest_chat_commands(bonus_command)  # НОВОЕ
 ban_command = ignore_budapest_chat_commands(ban_command)
 unban_command = ignore_budapest_chat_commands(unban_command)
 mute_command = ignore_budapest_chat_commands(mute_command)
