@@ -11,13 +11,14 @@ class Config:
     # Telegram Bot Token - ОБЯЗАТЕЛЬНЫЙ
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     
-  # ============= КАНАЛЫ И ГРУППЫ =============
+    # ============= КАНАЛЫ И ГРУППЫ =============
     
     # Основные каналы
     TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID", "-1002743668534"))
     MODERATION_GROUP_ID = int(os.getenv("MODERATION_GROUP_ID", "-1002734837434"))  # Группа для заявок на публикацию
     ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "-4843909295"))  # Группа для администраторов (уведомления)
     CHAT_FOR_ACTUAL = int(os.getenv("CHAT_FOR_ACTUAL", "-1002734837434"))
+    BUDAPEST_CHAT_ID = int(os.getenv("BUDAPEST_CHAT_ID", "-1002883770818"))  # ✅ ДОБАВЛЕНО: Чат для игнорирования команд
     
     # Дополнительные каналы
     TRADE_CHANNEL_ID = int(os.getenv("TRADE_CHANNEL_ID", "-1003033694255"))
@@ -25,7 +26,6 @@ class Config:
     BUDAPEST_CHAT = os.getenv("BUDAPEST_CHAT", "https://t.me/tgchatxxx")
     CATALOG_CHANNEL = os.getenv("CATALOG_CHANNEL", "https://t.me/trixvault")
     TRADE_CHANNEL = os.getenv("TRADE_CHANNEL", "https://t.me/hungarytrade")
-    BUDAPEST_CHAT_ID = int(os.getenv("BUDAPEST_CHAT_ID", "-1002883770818"))
 
     # НОВОЕ: Каналы для мониторинга статистики
     STATS_CHANNELS = {
@@ -131,6 +131,7 @@ class Config:
 • Группа администрирования: {cls.ADMIN_GROUP_ID}
 • Актуальное: {cls.CHAT_FOR_ACTUAL}
 • Торговый канал: {cls.TRADE_CHANNEL_ID}
+• Будапешт чат (игнор команд): {cls.BUDAPEST_CHAT_ID}
 
 👑 Права доступа:
 • Администраторов: {len(cls.ADMIN_IDS)}
