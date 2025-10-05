@@ -25,7 +25,8 @@ class Config:
     BUDAPEST_CHAT = os.getenv("BUDAPEST_CHAT", "https://t.me/tgchatxxx")
     CATALOG_CHANNEL = os.getenv("CATALOG_CHANNEL", "https://t.me/trixvault")
     TRADE_CHANNEL = os.getenv("TRADE_CHANNEL", "https://t.me/hungarytrade")
-    
+    BUDAPEST_CHAT_ID = int(os.getenv("BUDAPEST_CHAT_ID", "-1002883770818"))
+
     # НОВОЕ: Каналы для мониторинга статистики
     STATS_CHANNELS = {
         'budapest_channel': int(os.getenv("BUDAPEST_CHANNEL_ID", "-1002743668534")),
