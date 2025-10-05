@@ -15,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Забанить пользователя - БЛОКИРУЕТ везде"""
+    """Забанить пользователя - ПОЛНАЯ БЛОКИРОВКА везде + в боте"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -50,7 +50,6 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = context.args[0]
         reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
 
-        # Получаем пользователя по username или ID
         user_info = None
         if target.startswith('@'):
             user_info = get_user_by_username(target[1:])
@@ -78,32 +77,66 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     banned_chats = []
     failed_chats = []
 
-    # Баним в основном чате
+    # 1. Баним в BUDAPEST CHAT (основной чат)
     try:
         await context.bot.ban_chat_member(
-            chat_id=Config.CHAT_FOR_ACTUAL,
+            chat_id=Config.BUDAPEST_CHAT_ID,
             user_id=target_id
         )
-        banned_chats.append("Чат Будапешт")
+        banned_chats.append("Будапешт чат")
+        logger.info(f"Banned {target_id} in Budapest chat")
     except Exception as e:
-        logger.error(f"Failed to ban in main chat: {e}")
-        failed_chats.append("Чат Будапешт")
+        logger.error(f"Failed to ban in Budapest chat: {e}")
+        failed_chats.append("Будапешт чат")
 
-    # Баним в группе модерации
+    # 2. Баним в основном чате (CHAT_FOR_ACTUAL)
+    if Config.CHAT_FOR_ACTUAL != Config.BUDAPEST_CHAT_ID:
+        try:
+            await context.bot.ban_chat_member(
+                chat_id=Config.CHAT_FOR_ACTUAL,
+                user_id=target_id
+            )
+            banned_chats.append("Актуальное чат")
+            logger.info(f"Banned {target_id} in actual chat")
+        except Exception as e:
+            logger.error(f"Failed to ban in actual chat: {e}")
+            failed_chats.append("Актуальное чат")
+
+    # 3. Баним в группе модерации
     try:
         await context.bot.ban_chat_member(
             chat_id=Config.MODERATION_GROUP_ID,
             user_id=target_id
         )
         banned_chats.append("Группа модерации")
+        logger.info(f"Banned {target_id} in moderation group")
     except Exception as e:
         logger.error(f"Failed to ban in moderation group: {e}")
         failed_chats.append("Группа модерации")
 
-    # Фиксируем в БД
-    ban_user(target_id, reason)
+    # 4. Пытаемся забанить в каналах (если бот админ)
+    channels_to_ban = [
+        (Config.TARGET_CHANNEL_ID, "Канал Будапешт"),
+        (Config.TRADE_CHANNEL_ID, "Торговый канал")
+    ]
+    
+    for channel_id, channel_name in channels_to_ban:
+        try:
+            await context.bot.ban_chat_member(
+                chat_id=channel_id,
+                user_id=target_id
+            )
+            banned_chats.append(channel_name)
+            logger.info(f"Banned {target_id} in {channel_name}")
+        except Exception as e:
+            logger.warning(f"Could not ban in {channel_name}: {e}")
+            # Не добавляем в failed_chats, т.к. это необязательно
 
-    # Уведомляем админов
+    # 5. КРИТИЧНО: Фиксируем БАН в локальной БД (блокирует использование бота)
+    ban_user(target_id, reason)
+    logger.info(f"User {target_id} marked as banned in local database")
+
+    # 6. Уведомляем админов
     await admin_notifications.notify_ban(
         username=target_username,
         user_id=target_id,
@@ -113,15 +146,18 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Результат
     result_text = (
-        f"🚫 **Пользователь заблокирован:**\n\n"
+        f"🚫 **Пользователь ПОЛНОСТЬЮ заблокирован:**\n\n"
         f"👤 @{target_username} (ID: {target_id})\n"
         f"📝 Причина: {reason}\n"
         f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
+        f"🔒 **Блокировки:**\n"
+        f"• Бот: ✅ Заблокирован\n"
     )
+    
     if banned_chats:
-        result_text += f"✅ Заблокирован в: {', '.join(banned_chats)}\n"
+        result_text += f"• Чаты: ✅ {', '.join(banned_chats)}\n"
     if failed_chats:
-        result_text += f"⚠️ Не удалось заблокировать в: {', '.join(failed_chats)}\n"
+        result_text += f"• Не удалось: ⚠️ {', '.join(failed_chats)}\n"
 
     result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
 
@@ -130,11 +166,30 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=result_text,
         parse_mode='Markdown'
     )
+    
+    # Уведомляем пользователя о бане
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"🚫 **Вы заблокированы**\n\n"
+                f"📝 Причина: {reason}\n"
+                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
+                f"⛔️ Вы не можете:\n"
+                f"• Использовать бота\n"
+                f"• Писать в чатах Будапешт\n"
+                f"• Отправлять публикации\n\n"
+                f"📞 Для обжалования обратитесь к администрации"
+            ),
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user about ban: {e}")
 
-    logger.info(f"User {target_id} banned by {update.effective_user.id}")
+    logger.info(f"User {target_id} FULLY banned by {update.effective_user.id}")
 
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Разбанить пользователя"""
+    """Разбанить пользователя ВЕЗДЕ"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -166,6 +221,30 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("ℹ️ Пользователь не забанен")
         return
 
+    unbanned_chats = []
+    
+    # Разбаниваем везде
+    chats_to_unban = [
+        (Config.BUDAPEST_CHAT_ID, "Будапешт чат"),
+        (Config.CHAT_FOR_ACTUAL, "Актуальное чат"),
+        (Config.MODERATION_GROUP_ID, "Группа модерации"),
+        (Config.TARGET_CHANNEL_ID, "Канал Будапешт"),
+        (Config.TRADE_CHANNEL_ID, "Торговый канал")
+    ]
+    
+    for chat_id, chat_name in chats_to_unban:
+        try:
+            await context.bot.unban_chat_member(
+                chat_id=chat_id,
+                user_id=target_id,
+                only_if_banned=True
+            )
+            unbanned_chats.append(chat_name)
+            logger.info(f"Unbanned {target_id} in {chat_name}")
+        except Exception as e:
+            logger.warning(f"Could not unban in {chat_name}: {e}")
+
+    # Разбаниваем в локальной БД
     unban_user(target_id)
 
     # Уведомление
@@ -175,18 +254,41 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
 
-    await update.message.reply_text(
+    result_text = (
         f"✅ **Пользователь разблокирован:**\n\n"
         f"👤 @{user_info['username']} (ID: {target_id})\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n"
-        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-        parse_mode='Markdown'
+        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
     )
+    
+    if unbanned_chats:
+        result_text += f"🔓 Разблокирован в: {', '.join(unbanned_chats)}\n"
+    
+    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+
+    await update.message.reply_text(result_text, parse_mode='Markdown')
+    
+    # Уведомляем пользователя
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"✅ **Ваша блокировка снята**\n\n"
+                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
+                f"🎉 Вы можете снова:\n"
+                f"• Использовать бота\n"
+                f"• Писать в чатах\n"
+                f"• Отправлять публикации\n\n"
+                f"⚠️ Соблюдайте правила сообщества!"
+            ),
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user about unban: {e}")
 
     logger.info(f"User {target_id} unbanned by {update.effective_user.id}")
 
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Замутить пользователя - реальный мут в Telegram"""
+    """Замутить пользователя - ЗАПРЕТ писать в Budapest Chat + в боте"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -253,10 +355,24 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mute_until = datetime.now() + timedelta(seconds=seconds)
-
     muted_chats = []
     failed_chats = []
 
+    # Мутим в Budapest Chat (ГЛАВНОЕ)
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=Config.BUDAPEST_CHAT_ID,
+            user_id=target_id,
+            permissions=ChatPermissions(can_send_messages=False),
+            until_date=mute_until
+        )
+        muted_chats.append("Будапешт чат")
+        logger.info(f"Muted {target_id} in Budapest chat")
+    except Exception as e:
+        logger.error(f"Failed to mute in Budapest chat: {e}")
+        failed_chats.append("Будапешт чат")
+
+    # Мутим в других чатах
     try:
         await context.bot.restrict_chat_member(
             chat_id=Config.CHAT_FOR_ACTUAL,
@@ -264,11 +380,12 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             permissions=ChatPermissions(can_send_messages=False),
             until_date=mute_until
         )
-        muted_chats.append("Чат Будапешт")
+        muted_chats.append("Актуальное чат")
     except Exception as e:
-        logger.error(f"Failed to mute in main chat: {e}")
-        failed_chats.append("Чат Будапешт")
+        logger.error(f"Failed to mute in actual chat: {e}")
+        failed_chats.append("Актуальное чат")
 
+    # КРИТИЧНО: Мутим в локальной БД (блокирует бота)
     mute_user(target_id, mute_until)
 
     await admin_notifications.notify_mute(
@@ -283,18 +400,40 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 @{target_username} (ID: {target_id})\n"
         f"⏱️ Длительность: {time_str}\n"
         f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n\n"
+        f"🔒 **Ограничения:**\n"
+        f"• Бот: ✅ Заблокирован\n"
     )
+    
     if muted_chats:
-        result_text += f"✅ Замучен в: {', '.join(muted_chats)}\n"
+        result_text += f"• Чаты: ✅ {', '.join(muted_chats)}\n"
     if failed_chats:
-        result_text += f"⚠️ Не удалось замутить в: {', '.join(failed_chats)}"
+        result_text += f"• Не удалось: ⚠️ {', '.join(failed_chats)}"
 
     await context.bot.send_message(chat_id=update.effective_user.id, text=result_text, parse_mode='Markdown')
+    
+    # Уведомляем пользователя
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"🔇 **Вы получили мут**\n\n"
+                f"⏱️ Длительность: {time_str}\n"
+                f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n"
+                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
+                f"⛔️ Вы не можете:\n"
+                f"• Писать в чатах Будапешт\n"
+                f"• Использовать бота\n\n"
+                f"⚠️ Воздержитесь от нарушений правил"
+            ),
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user about mute: {e}")
 
     logger.info(f"User {target_id} muted by {update.effective_user.id} for {time_str}")
 
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Размутить пользователя"""
+    """Размутить пользователя ВЕЗДЕ"""
     if not Config.is_moderator(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -324,6 +463,32 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("ℹ️ Пользователь не замучен")
         return
 
+    unmuted_chats = []
+    
+    # Размучиваем везде
+    chats_to_unmute = [
+        (Config.BUDAPEST_CHAT_ID, "Будапешт чат"),
+        (Config.CHAT_FOR_ACTUAL, "Актуальное чат")
+    ]
+    
+    for chat_id, chat_name in chats_to_unmute:
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=target_id,
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_polls=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
+                )
+            )
+            unmuted_chats.append(chat_name)
+        except Exception as e:
+            logger.warning(f"Could not unmute in {chat_name}: {e}")
+
+    # Размучиваем в локальной БД
     unmute_user(target_id)
 
     await admin_notifications.notify_unmute(
@@ -332,13 +497,33 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         moderator=update.effective_user.username or str(update.effective_user.id)
     )
 
-    await update.message.reply_text(
+    result_text = (
         f"🔊 **Пользователь размучен:**\n\n"
         f"👤 @{user_info['username']} (ID: {target_id})\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n"
-        f"⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-        parse_mode='Markdown'
+        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
     )
+    
+    if unmuted_chats:
+        result_text += f"🔓 Размучен в: {', '.join(unmuted_chats)}\n"
+    
+    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+
+    await update.message.reply_text(result_text, parse_mode='Markdown')
+    
+    # Уведомляем пользователя
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"🔊 **Ваш мут снят**\n\n"
+                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
+                f"🎉 Вы можете снова писать в чатах и использовать бота\n\n"
+                f"⚠️ Соблюдайте правила сообщества!"
+            ),
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user about unmute: {e}")
 
     logger.info(f"User {target_id} unmuted by {update.effective_user.id}")
 
@@ -406,10 +591,9 @@ async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
     
-    # Определяем количество пользователей в топе
     limit = 10
     if context.args and context.args[0].isdigit():
-        limit = min(int(context.args[0]), 50)  # Максимум 50
+        limit = min(int(context.args[0]), 50)
     
     top_users = get_top_users(limit)
     
@@ -449,8 +633,6 @@ async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     target = context.args[0]
-    
-    # Получаем информацию о пользователе
     user_info = None
     
     if target.startswith('@'):
@@ -467,7 +649,6 @@ async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_activity = user_info['last_activity']
     time_diff = datetime.now() - last_activity
     
-    # Форматируем время
     if time_diff.days > 0:
         time_ago = f"{time_diff.days} дней назад"
     elif time_diff.seconds >= 3600:
@@ -479,7 +660,6 @@ async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         time_ago = "только что"
     
-    # Проверяем статус
     status = "✅ Активен"
     if user_info.get('banned'):
         status = "🚫 Забанен"
@@ -499,7 +679,6 @@ async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
-# Экспорт функций
 __all__ = [
     'ban_command',
     'unban_command',
