@@ -3,6 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
 from services.admin_notifications import admin_notifications
+from data.user_data import user_data
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,71 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выберите раздел для управления:"
     )
     
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+
+async def execute_broadcast(query, context):
+    """Выполнить рассылку"""
+    broadcast_text = context.user_data.get('broadcast_text')
+    
+    if not broadcast_text:
+        await query.edit_message_text("❌ Текст рассылки не найден. Попробуйте снова.")
+        return
+    
+    await query.edit_message_text("📢 Начинаю рассылку...")
+    
+    sent_count = 0
+    failed_count = 0
+    
+    for user_id in user_data.keys():
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=broadcast_text
+            )
+            sent_count += 1
+        except Exception as e:
+            logger.error(f"Failed to send broadcast to {user_id}: {e}")
+            failed_count += 1
+    
+    # Уведомление о результате рассылки
+    await admin_notifications.notify_broadcast(
+        sent=sent_count,
+        failed=failed_count,
+        moderator=query.from_user.username or str(query.from_user.id)
+    )
+    
+    result_text = (
+        f"✅ **Рассылка завершена!**\n\n"
+        f"📤 Отправлено: {sent_count}\n"
+        f"❌ Не удалось: {failed_count}"
+    )
+    
+    await query.edit_message_text(result_text, parse_mode='Markdown')
+    
+    # Очищаем данные
+    context.user_data.pop('broadcast_text', None)
+
+# Экспорт функций
+__all__ = [
+    'admin_command',
+    'say_command',
+    'broadcast_command',
+    'sendstats_command',
+    'handle_admin_callback'
+]="admin:logs"),
+            InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
+        ]
+    ]
+    
+    text = (
+        "🔧 **АДМИН-ПАНЕЛЬ**\n\n"
+        "Выберите раздел для управления:"
+    )
+    
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -44,7 +110,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправить сообщение от имени бота в текущий чат"""
+    """Отправить сообщение от имени бота в ТЕКУЩИЙ чат"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -53,23 +119,43 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📝 **Использование:**\n"
             "`/say текст сообщения`\n\n"
-            "Бот отправит ваше сообщение в этот чат",
+            "Бот отправит ваше сообщение в ЭТОТ чат",
             parse_mode='Markdown'
         )
         return
     
     message_text = ' '.join(context.args)
+    chat_id = update.effective_chat.id
     
     try:
         # Удаляем команду пользователя
         await update.message.delete()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Could not delete say command: {e}")
     
-    # Отправляем сообщение от имени бота
-    await update.message.reply_text(message_text)
-    
-    logger.info(f"Say command used by {update.effective_user.username}: {message_text}")
+    # ИСПРАВЛЕНИЕ: Отправляем сообщение от имени бота в ТЕКУЩИЙ чат
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=message_text
+        )
+        logger.info(f"Say command used by {update.effective_user.username} in chat {chat_id}: {message_text[:50]}")
+        
+        # Отправляем подтверждение админу в ЛС
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=f"✅ Сообщение отправлено в чат {chat_id}"
+            )
+        except:
+            pass
+            
+    except Exception as e:
+        logger.error(f"Error in say command: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=f"❌ Ошибка отправки сообщения: {e}"
+        )
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Рассылка сообщения всем пользователям"""
@@ -103,8 +189,10 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📢 **Подтверждение рассылки**\n\n"
         f"Будет отправлено:\n\n{message_text}\n\n"
+        f"👥 Получателей: {len(user_data)}\n\n"
         f"⚠️ Это действие нельзя отменить!",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
     )
 
 async def sendstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,8 +253,6 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def show_broadcast_info(query, context):
     """Показать информацию о рассылке"""
-    from data.user_data import user_data
-    
     total_users = len(user_data)
     
     text = (
@@ -187,7 +273,6 @@ async def show_broadcast_info(query, context):
 
 async def show_stats(query, context):
     """Показать статистику"""
-    from data.user_data import user_data
     from data.games_data import word_games, roll_games
     from datetime import datetime, timedelta
     
@@ -198,6 +283,8 @@ async def show_stats(query, context):
                    datetime.now() - data['last_activity'] <= timedelta(days=7))
     total_messages = sum(data['message_count'] for data in user_data.values())
     banned_count = sum(1 for data in user_data.values() if data.get('banned'))
+    muted_count = sum(1 for data in user_data.values() if 
+                     data.get('muted_until') and data['muted_until'] > datetime.now())
     
     # Статистика игр
     games_stats = ""
@@ -213,11 +300,13 @@ async def show_stats(query, context):
         f"👥 **Пользователи:**\n"
         f"• Всего: {total_users}\n"
         f"• Активных за 24ч: {active_24h}\n"
-        f"• Активных за 7д: {active_7d}\n"
-        f"• Забанено: {banned_count}\n\n"
+        f"• Активных за 7д: {active_7d}\n\n"
         f"💬 **Сообщения:**\n"
         f"• Всего: {total_messages}\n"
         f"• Среднее на пользователя: {total_messages // total_users if total_users > 0 else 0}\n\n"
+        f"🔨 **Модерация:**\n"
+        f"• Забанено: {banned_count}\n"
+        f"• В муте: {muted_count}\n\n"
         f"🎮 **Игры:**{games_stats}\n\n"
         f"📈 Используйте `/sendstats` для отправки в админскую группу"
     )
@@ -235,7 +324,7 @@ async def show_stats(query, context):
 
 async def show_users_info(query, context):
     """Показать информацию о пользователях"""
-    from data.user_data import user_data, get_top_users
+    from data.user_data import get_top_users
     from datetime import datetime, timedelta
     
     total_users = len(user_data)
@@ -255,9 +344,8 @@ async def show_users_info(query, context):
         f"🟢 Активных сегодня: {active_today}\n\n"
         f"🏆 **Топ-5 активных:**\n{top_text}\n\n"
         f"Используйте:\n"
-        f"• `/whois @username` - информация о пользователе\n"
-        f"• `/banlist` - список забаненных\n"
-        f"• `/top` - топ пользователей"
+        f"• `/top` - топ пользователей\n"
+        f"• `/banlist` - список забаненных"
     )
     
     keyboard = [
@@ -341,13 +429,12 @@ async def show_autopost_info(query, context):
     """Показать информацию об автопостинге"""
     from services.autopost_service import autopost_service
     
-    status = "🟢 Активен" if autopost_service.is_running() else "🔴 Остановлен"
-    posts_count = len(autopost_service.posts)
+    status_info = autopost_service.get_status()
+    status = "🟢 Активен" if status_info['running'] else "🔴 Остановлен"
     
     text = (
         f"🔄 **АВТОПОСТИНГ**\n\n"
         f"Статус: {status}\n"
-        f"📝 Постов в очереди: {posts_count}\n"
         f"⏱️ Интервал: {Config.SCHEDULER_MIN_INTERVAL}-{Config.SCHEDULER_MAX_INTERVAL} минут\n\n"
         "**Команды:**\n"
         "• `/autopost` - управление автопостингом\n"
@@ -392,7 +479,7 @@ async def show_admin_help(query, context):
         "ℹ️ **СПРАВКА ДЛЯ АДМИНОВ**\n\n"
         "**📢 Рассылка:**\n"
         "• `/broadcast текст` - отправить всем\n"
-        "• `/say текст` - отправить в чат\n\n"
+        "• `/say текст` - отправить в текущий чат\n\n"
         "**📊 Статистика:**\n"
         "• `/stats` - общая статистика\n"
         "• `/sendstats` - в админскую группу\n"
@@ -411,9 +498,8 @@ async def show_admin_help(query, context):
         "• `/autopost` - управление\n"
         "• `/autoposttest` - тест\n\n"
         "**ℹ️ Информация:**\n"
-        "• `/whois @user`\n"
         "• `/id` - узнать ID\n"
-        "• `/lastseen @user`"
+        "• `/chatinfo` - информация о чате"
     )
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
@@ -440,71 +526,4 @@ async def show_main_admin_menu(query, context):
             InlineKeyboardButton("🔄 Автопост", callback_data="admin:autopost")
         ],
         [
-            InlineKeyboardButton("📝 Логи", callback_data="admin:logs"),
-            InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
-        ]
-    ]
-    
-    text = (
-        "🔧 **АДМИН-ПАНЕЛЬ**\n\n"
-        "Выберите раздел для управления:"
-    )
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-async def execute_broadcast(query, context):
-    """Выполнить рассылку"""
-    broadcast_text = context.user_data.get('broadcast_text')
-    
-    if not broadcast_text:
-        await query.edit_message_text("❌ Текст рассылки не найден. Попробуйте снова.")
-        return
-    
-    await query.edit_message_text("📢 Начинаю рассылку...")
-    
-    from data.user_data import user_data
-    
-    sent_count = 0
-    failed_count = 0
-    
-    for user_id in user_data.keys():
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=broadcast_text
-            )
-            sent_count += 1
-        except Exception as e:
-            logger.error(f"Failed to send broadcast to {user_id}: {e}")
-            failed_count += 1
-    
-    # Уведомление о результате рассылки
-    await admin_notifications.notify_broadcast(
-        sent=sent_count,
-        failed=failed_count,
-        moderator=query.from_user.username or str(query.from_user.id)
-    )
-    
-    result_text = (
-        f"✅ **Рассылка завершена!**\n\n"
-        f"📤 Отправлено: {sent_count}\n"
-        f"❌ Не удалось: {failed_count}"
-    )
-    
-    await query.edit_message_text(result_text, parse_mode='Markdown')
-    
-    # Очищаем данные
-    context.user_data.pop('broadcast_text', None)
-
-# Экспорт функций
-__all__ = [
-    'admin_command',
-    'say_command',
-    'broadcast_command',
-    'sendstats_command',
-    'handle_admin_callback'
-]
+            InlineKeyboardButton("📝 Логи", callback_data
