@@ -211,7 +211,6 @@ def ignore_budapest_chat_commands(func):
 
 # Оборачиваем все команды декоратором
 start_command = ignore_budapest_chat_commands(start_command)
-help_command = ignore_budapest_chat_commands(help_command)
 trix_command = ignore_budapest_chat_commands(trix_command)
 id_command = ignore_budapest_chat_commands(id_command)
 hp_command = ignore_budapest_chat_commands(hp_command)
