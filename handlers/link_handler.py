@@ -6,30 +6,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# СТАТИЧНЫЕ ССЫЛКИ TRIX (редактируются только в коде)
+# ТЕСТОВЫЕ ССЫЛКИ TRIX (временно все на @TrixLiveBot)
 TRIX_LINKS = [
     {
         'id': 1,
         'name': '🙅‍♂️ Канал Будапешт',
-        'url': 'https://t.me/snghu',
+        'url': 'https://t.me/Trixlivebot',
         'description': 'Основной канал сообщества Будапешта'
     },
     {
         'id': 2,
         'name': '🙅‍♀️ Чат Будапешт',
-        'url': 'https://t.me/tgchatxxx',
+        'url': 'https://t.me/Trixlivebot',
         'description': 'Чат для общения участников сообщества'
     },
     {
         'id': 3,
         'name': '🙅 Каталог услуг',
-        'url': 'https://t.me/trixvault',
+        'url': 'https://t.me/Trixlivebot',
         'description': 'Каталог услуг и специалистов Будапешта'
     },
     {
         'id': 4,
         'name': '🕵️‍♂️ Барахолка (КОП)',
-        'url': 'https://t.me/hungarytrade',
+        'url': 'https://t.me/Trixlivebot',
         'description': 'Купля, продажа, обмен товаров'
     }
 ]
@@ -58,7 +58,8 @@ async def trixlinks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for link in TRIX_LINKS:
         text += f"{link['name']}\n📝 {link['description']}\n\n"
     
-    text += "👆 Нажмите на кнопку чтобы перейти"
+    text += "👆 Нажмите на кнопку чтобы перейти\n\n"
+    text += "⚠️ **ТЕСТОВЫЙ РЕЖИМ**: Все ссылки временно ведут на @TrixLiveBot"
     
     await update.message.reply_text(
         text,
