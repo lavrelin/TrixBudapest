@@ -215,6 +215,10 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         username = context.args[0][1:]  # Убираем @
         message_text = ' '.join(context.args[1:])
         
+        if not message_text.strip():
+            await update.message.reply_text("❌ Не указан текст сообщения после username")
+            return
+        
         # Пытаемся найти user_id в нашей базе данных
         try:
             from data.user_data import get_user_by_username
@@ -248,6 +252,10 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = int(context.args[0])
         message_text = ' '.join(context.args[1:])
         
+        if not message_text.strip():
+            await update.message.reply_text("❌ Не указан текст сообщения после user ID")
+            return
+        
         # Пытаемся найти username в базе (опционально)
         try:
             from data.user_data import get_user_by_id
@@ -271,7 +279,7 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Проверяем наличие текста
+    # ИСПРАВЛЕНО: Дополнительная проверка текста
     if not message_text or not message_text.strip():
         await update.message.reply_text("❌ Не указан текст сообщения")
         return
@@ -283,21 +291,29 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.warning(f"Could not delete say command: {e}")
     
-    # Отправляем сообщение пользователю в ЛС
+    # ИСПРАВЛЕНО: Отправляем сообщение пользователю в ЛС с улучшенной обработкой ошибок
     try:
+        # Экранируем markdown символы в тексте пользователя
+        safe_message = message_text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+        
         await context.bot.send_message(
             chat_id=target_user_id,
-            text=f"📨 **Сообщение от администрации:**\n\n{message_text}",
+            text=f"📨 **Сообщение от администрации:**\n\n{safe_message}",
             parse_mode='Markdown'
         )
         
         logger.info(
-            f"Say command: {update.effective_user.username} "
+            f"Say command SUCCESS: {update.effective_user.username} "
             f"sent PM to @{target_username} (ID: {target_user_id}): {message_text[:50]}"
         )
         
-        # Подтверждение админу
-        confirmation_msg = f"✅ Сообщение отправлено\n\n👤 @{target_username}\n🆔 ID: `{target_user_id}`"
+        # Подтверждение админу в ЛС
+        confirmation_msg = (
+            f"✅ **Сообщение успешно отправлено!**\n\n"
+            f"👤 Получатель: @{target_username}\n"
+            f"🆔 ID: `{target_user_id}`\n"
+            f"📝 Текст: {message_text[:100]}{'...' if len(message_text) > 100 else ''}"
+        )
         
         try:
             await context.bot.send_message(
@@ -305,36 +321,57 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=confirmation_msg,
                 parse_mode='Markdown'
             )
-        except Exception:
+        except Exception as notify_error:
             # Если не удалось отправить в ЛС админу, отправляем в текущий чат
+            logger.warning(f"Could not send confirmation to admin PM: {notify_error}")
             if update.effective_chat.type == 'private':
                 await update.message.reply_text(confirmation_msg, parse_mode='Markdown')
             
     except Exception as e:
-        logger.error(f"Error sending PM in say command to {target_user_id}: {e}")
+        logger.error(f"Error sending PM in say command to {target_user_id}: {e}", exc_info=True)
         
-        error_msg = f"❌ Не удалось отправить сообщение\n\n👤 @{target_username}\n🆔 ID: {target_user_id}\n\n"
+        error_msg = (
+            f"❌ **Не удалось отправить сообщение**\n\n"
+            f"👤 Получатель: @{target_username}\n"
+            f"🆔 ID: `{target_user_id}`\n\n"
+        )
         
+        # Определяем причину ошибки
         error_str = str(e).lower()
-        if "bot was blocked by the user" in error_str:
-            error_msg += "**Причина:** Пользователь заблокировал бота"
+        if "bot was blocked" in error_str or "user is deactivated" in error_str:
+            error_msg += "**Причина:** Пользователь заблокировал бота или удалил аккаунт"
         elif "user not found" in error_str or "chat not found" in error_str:
             error_msg += "**Причина:** Пользователь не найден или никогда не запускал бота"
         elif "forbidden" in error_str:
-            error_msg += "**Причина:** Бот не может отправить сообщение этому пользователю (возможно заблокирован)"
+            error_msg += "**Причина:** Бот не может отправить сообщение (возможно заблокирован пользователем)"
+        elif "invalid user" in error_str or "bad request" in error_str:
+            error_msg += "**Причина:** Неверный ID пользователя"
         else:
-            error_msg += f"**Причина:** {str(e)[:100]}"
+            error_msg += f"**Причина:** {str(e)[:150]}"
         
+        error_msg += (
+            f"\n\n**Решения:**\n"
+            f"• Попросите пользователя написать `/start` боту\n"
+            f"• Проверьте правильность ID\n"
+            f"• Используйте reply на сообщение пользователя"
+        )
+        
+        # Отправляем сообщение об ошибке
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
                 text=error_msg,
                 parse_mode='Markdown'
             )
-        except:
+        except Exception as error_notify_fail:
+            logger.error(f"Could not notify admin about error: {error_notify_fail}")
+            # Последняя попытка - в текущий чат
             if update.effective_chat.type == 'private':
-                await update.message.reply_text(error_msg, parse_mode='Markdown')
-
+                try:
+                    await update.message.reply_text(error_msg, parse_mode='Markdown')
+                except:
+                    # Совсем простое сообщение без markdown
+                    await update.message.reply_text(f"Ошибка отправки сообщения пользователю {target_user_id}")
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Рассылка сообщения всем пользователям"""
