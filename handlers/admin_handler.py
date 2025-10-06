@@ -187,10 +187,12 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📝 **Использование:**\n\n"
             "**Ответом на сообщение:**\n"
-            "`/say текст сообщения` (reply)\n\n"
-            "**Указав user ID:**\n"
+            "`/say текст` (reply)\n\n"
+            "**По username:**\n"
+            "`/say @username текст`\n\n"
+            "**По user ID:**\n"
             "`/say 123456789 текст`\n\n"
-            "Бот отправит сообщение пользователю в личные сообщения",
+            "💡 Самый надёжный способ - ответить на сообщение пользователя",
             parse_mode='Markdown'
         )
         return
@@ -200,7 +202,7 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = None
     target_username = "пользователь"
     
-    # Вариант 1: Reply на сообщение (ПРИОРИТЕТНЫЙ)
+    # Вариант 1: Reply на сообщение (ПРИОРИТЕТНЫЙ и самый надёжный)
     if update.message.reply_to_message:
         target_user_id = update.message.reply_to_message.from_user.id
         target_username = update.message.reply_to_message.from_user.username or f"ID_{target_user_id}"
@@ -208,7 +210,40 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Say via reply: target={target_user_id}, username={target_username}")
     
-    # Вариант 2: User ID в аргументах
+    # Вариант 2: Username (@username)
+    elif context.args[0].startswith('@'):
+        username = context.args[0][1:]  # Убираем @
+        message_text = ' '.join(context.args[1:])
+        
+        # Пытаемся найти user_id в нашей базе данных
+        try:
+            from data.user_data import get_user_by_username
+            user_info = get_user_by_username(username)
+            
+            if user_info:
+                target_user_id = user_info['id']
+                target_username = username
+                logger.info(f"Say via username (found in DB): @{username} -> {target_user_id}")
+            else:
+                # Пользователь не найден в нашей базе
+                await update.message.reply_text(
+                    f"❌ Пользователь @{username} не найден в базе бота\n\n"
+                    "⚠️ Чтобы отправить сообщение:\n"
+                    "1. Попросите пользователя написать боту `/start`\n"
+                    "2. Или используйте его user ID: `/say USER_ID текст`\n"
+                    "3. Или ответьте на его сообщение: `/say текст` (reply)\n\n"
+                    "💡 Reply на сообщение - самый надёжный способ!"
+                )
+                return
+        except Exception as e:
+            logger.error(f"Error searching username: {e}")
+            await update.message.reply_text(
+                f"❌ Ошибка поиска пользователя @{username}\n\n"
+                "Попробуйте другой способ или обратитесь к разработчику"
+            )
+            return
+    
+    # Вариант 3: User ID (только цифры)
     elif context.args[0].isdigit():
         target_user_id = int(context.args[0])
         message_text = ' '.join(context.args[1:])
@@ -228,8 +263,10 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Неверный формат\n\n"
             "Используйте:\n"
+            "• `/say @username текст`\n"
             "• `/say USER_ID текст`\n"
-            "• Или ответьте на сообщение: `/say текст`",
+            "• Или ответьте на сообщение: `/say текст`\n\n"
+            "💡 Reply - самый надёжный способ!",
             parse_mode='Markdown'
         )
         return
@@ -260,7 +297,7 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Подтверждение админу
-        confirmation_msg = f"✅ Сообщение отправлено пользователю @{target_username} (ID: `{target_user_id}`)"
+        confirmation_msg = f"✅ Сообщение отправлено\n\n👤 @{target_username}\n🆔 ID: `{target_user_id}`"
         
         try:
             await context.bot.send_message(
@@ -276,26 +313,27 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error sending PM in say command to {target_user_id}: {e}")
         
-        error_msg = f"❌ Не удалось отправить сообщение пользователю @{target_username} (ID: {target_user_id})\n\n"
+        error_msg = f"❌ Не удалось отправить сообщение\n\n👤 @{target_username}\n🆔 ID: {target_user_id}\n\n"
         
         error_str = str(e).lower()
         if "bot was blocked by the user" in error_str:
-            error_msg += "Причина: Пользователь заблокировал бота"
+            error_msg += "**Причина:** Пользователь заблокировал бота"
         elif "user not found" in error_str or "chat not found" in error_str:
-            error_msg += "Причина: Пользователь не найден или никогда не запускал бота"
+            error_msg += "**Причина:** Пользователь не найден или никогда не запускал бота"
         elif "forbidden" in error_str:
-            error_msg += "Причина: Бот не может отправить сообщение этому пользователю"
+            error_msg += "**Причина:** Бот не может отправить сообщение этому пользователю (возможно заблокирован)"
         else:
-            error_msg += f"Причина: {str(e)[:100]}"
+            error_msg += f"**Причина:** {str(e)[:100]}"
         
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text=error_msg
+                text=error_msg,
+                parse_mode='Markdown'
             )
         except:
             if update.effective_chat.type == 'private':
-                await update.message.reply_text(error_msg)
+                await update.message.reply_text(error_msg, parse_mode='Markdown')
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
