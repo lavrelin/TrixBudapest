@@ -182,37 +182,83 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "📝 **Использование:**\n"
+            "📝 **Использование:**\n\n"
+            "**В группе/чате:**\n"
             "`/say текст сообщения`\n\n"
-            "Бот отправит ваше сообщение в этот чат",
+            "**В личных сообщениях:**\n"
+            "`/say CHAT_ID текст сообщения`\n\n"
+            "Пример:\n"
+            "`/say -1002734837434 Привет всем!`\n\n"
+            "💡 Используйте `/chatinfo` в нужном чате чтобы узнать его ID",
             parse_mode='Markdown'
         )
         return
-
-    message_text = ' '.join(context.args)
-    chat_id = update.effective_chat.id
-
+    
+    # ИСПРАВЛЕНИЕ: Проверяем формат команды
+    is_private = update.effective_chat.type == 'private'
+    
+    # Если в ЛС и первый аргумент похож на chat_id
+    if is_private and context.args[0].lstrip('-').isdigit():
+        # Формат: /say CHAT_ID текст
+        try:
+            target_chat_id = int(context.args[0])
+            message_text = ' '.join(context.args[1:])
+            
+            if not message_text:
+                await update.message.reply_text(
+                    "❌ Не указан текст сообщения\n\n"
+                    "Использование: `/say CHAT_ID текст`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат chat_id")
+            return
+    else:
+        # Обычный формат: /say текст (в группе)
+        target_chat_id = update.effective_chat.id
+        message_text = ' '.join(context.args)
+    
+    # Удаляем команду если в группе
+    if not is_private:
+        try:
+            await update.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete say command: {e}")
+    
+    # Отправляем сообщение
     try:
-        await update.message.delete()
-    except Exception as e:
-        logger.warning(f"Could not delete say command: {e}")
-
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=message_text)
-        logger.info(f"Say command used by {update.effective_user.username} in chat {chat_id}: {message_text[:50]}")
+        await context.bot.send_message(
+            chat_id=target_chat_id,
+            text=message_text
+        )
+        
+        logger.info(
+            f"Say command: {update.effective_user.username} "
+            f"sent to chat {target_chat_id}: {message_text[:50]}"
+        )
+        
+        # Подтверждение админу (только если отправка была успешной)
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text=f"✅ Сообщение отправлено в чат {chat_id}"
+                text=f"✅ Сообщение отправлено в чат `{target_chat_id}`",
+                parse_mode='Markdown'
             )
         except Exception:
             pass
+            
     except Exception as e:
         logger.error(f"Error in say command: {e}")
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text=f"❌ Ошибка отправки сообщения: {e}"
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=f"❌ Ошибка отправки в чат `{target_chat_id}`:\n{str(e)}",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
