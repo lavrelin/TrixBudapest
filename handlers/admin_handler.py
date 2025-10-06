@@ -17,11 +17,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
 
-    await show_main_admin_menu(update, context)
-
-
-async def show_main_admin_menu(update_or_query, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает главное меню админки"""
     keyboard = [
         [
             InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
@@ -46,21 +41,11 @@ async def show_main_admin_menu(update_or_query, context: ContextTypes.DEFAULT_TY
         "Выберите раздел для управления:"
     )
 
-    # Если вызов из callback'а
-    if hasattr(update_or_query, "callback_query"):
-        query = update_or_query.callback_query
-        await query.edit_message_text(
-            text=text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-    else:
-        # Если вызов через /admin
-        await update_or_query.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
 
 
 # ===============================
@@ -99,13 +84,50 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await show_admin_help(query, context)
     
     elif action == "confirm_broadcast":
-        await execute_broadcast(query, context)
+        await execute_broadcast(update, context)
     
     elif action == "cancel_broadcast":
         await query.edit_message_text("❌ Рассылка отменена")
     
     elif action == "back":
         await show_main_admin_menu(query, context)
+
+
+# ===============================
+# Показ главного меню (для callback)
+# ===============================
+async def show_main_admin_menu(query, context):
+    """Показывает главное меню админки через callback"""
+    keyboard = [
+        [
+            InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
+            InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")
+        ],
+        [
+            InlineKeyboardButton("👥 Пользователи", callback_data="admin:users"),
+            InlineKeyboardButton("🎮 Игры", callback_data="admin:games")
+        ],
+        [
+            InlineKeyboardButton("⚙️ Настройки", callback_data="admin:settings"),
+            InlineKeyboardButton("🔄 Автопост", callback_data="admin:autopost")
+        ],
+        [
+            InlineKeyboardButton("📝 Логи", callback_data="admin:logs"),
+            InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
+        ]
+    ]
+
+    text = (
+        "🔧 **АДМИН-ПАНЕЛЬ**\n\n"
+        "Выберите раздел для управления:"
+    )
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+
 
 # ===============================
 # Рассылка сообщений
@@ -193,17 +215,6 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ===============================
-# Экспорт функций
-# ===============================
-__all__ = [
-    'admin_command',
-    'execute_broadcast',
-    'say_command',
-    'handle_admin_callback',
-    'show_main_admin_menu'
-]
-
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Рассылка сообщения всем пользователям"""
     if not Config.is_admin(update.effective_user.id):
@@ -222,7 +233,6 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message_text = ' '.join(context.args)
     
-    # Подтверждение рассылки
     keyboard = [
         [
             InlineKeyboardButton("✅ Подтвердить", callback_data=f"admin:confirm_broadcast"),
@@ -230,7 +240,6 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     
-    # Сохраняем текст рассылки в user_data
     context.user_data['broadcast_text'] = message_text
     
     await update.message.reply_text(
@@ -241,6 +250,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
+
 
 async def sendstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отправить статистику вручную"""
@@ -257,47 +267,10 @@ async def sendstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error sending stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при отправке статистики: {e}")
 
-async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик callback для админ-панели"""
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split(":")
-    action = data[1] if len(data) > 1 else None
-    
-    if action == "broadcast":
-        await show_broadcast_info(query, context)
-    
-    elif action == "stats":
-        await show_stats(query, context)
-    
-    elif action == "users":
-        await show_users_info(query, context)
-    
-    elif action == "games":
-        await show_games_info(query, context)
-    
-    elif action == "settings":
-        await show_settings(query, context)
-    
-    elif action == "autopost":
-        await show_autopost_info(query, context)
-    
-    elif action == "logs":
-        await show_logs(query, context)
-    
-    elif action == "help":
-        await show_admin_help(query, context)
-    
-    elif action == "confirm_broadcast":
-        await execute_broadcast(query, context)
-    
-    elif action == "cancel_broadcast":
-        await query.edit_message_text("❌ Рассылка отменена")
-    
-    elif action == "back":
-        await show_main_admin_menu(query, context)
 
+# ===============================
+# Вспомогательные функции для показа разделов
+# ===============================
 async def show_broadcast_info(query, context):
     """Показать информацию о рассылке"""
     total_users = len(user_data)
@@ -318,6 +291,7 @@ async def show_broadcast_info(query, context):
         parse_mode='Markdown'
     )
 
+
 async def show_stats(query, context):
     """Показать статистику"""
     from data.games_data import word_games, roll_games
@@ -333,7 +307,6 @@ async def show_stats(query, context):
     muted_count = sum(1 for data in user_data.values() if 
                      data.get('muted_until') and data['muted_until'] > datetime.now())
     
-    # Статистика игр
     games_stats = ""
     for version in ['need', 'try', 'more']:
         active = "✅" if word_games[version]['active'] else "❌"
@@ -369,6 +342,7 @@ async def show_stats(query, context):
         parse_mode='Markdown'
     )
 
+
 async def show_users_info(query, context):
     """Показать информацию о пользователях"""
     from data.user_data import get_top_users
@@ -378,7 +352,6 @@ async def show_users_info(query, context):
     active_today = sum(1 for data in user_data.values() if 
                       datetime.now() - data['last_activity'] <= timedelta(hours=24))
     
-    # Топ-5 активных
     top_users = get_top_users(5)
     top_text = "\n".join([
         f"{i+1}. @{user['username']} - {user['message_count']} сообщений"
@@ -406,6 +379,7 @@ async def show_users_info(query, context):
         parse_mode='Markdown'
     )
 
+
 async def show_games_info(query, context):
     """Показать информацию об играх"""
     from data.games_data import word_games, roll_games
@@ -432,9 +406,9 @@ async def show_games_info(query, context):
     
     text += (
         "📝 **Команды:**\n"
-        f"• `/{version}guide` - справка для админов\n"
-        f"• `/{version}start` - запустить конкурс\n"
-        f"• `/{version}rollstart N` - провести розыгрыш"
+        f"• `/{'{version}'}guide` - справка для админов\n"
+        f"• `/{'{version}'}start` - запустить конкурс\n"
+        f"• `/{'{version}'}rollstart N` - провести розыгрыш"
     )
     
     keyboard = [
@@ -447,6 +421,7 @@ async def show_games_info(query, context):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
+
 
 async def show_settings(query, context):
     """Показать настройки"""
@@ -471,6 +446,7 @@ async def show_settings(query, context):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
+
 
 async def show_autopost_info(query, context):
     """Показать информацию об автопостинге"""
@@ -499,6 +475,7 @@ async def show_autopost_info(query, context):
         parse_mode='Markdown'
     )
 
+
 async def show_logs(query, context):
     """Показать последние логи"""
     text = (
@@ -519,6 +496,7 @@ async def show_logs(query, context):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
+
 
 async def show_admin_help(query, context):
     """Показать справку для админов"""
@@ -557,23 +535,15 @@ async def show_admin_help(query, context):
         parse_mode='Markdown'
     )
 
-async def show_main_admin_menu(query, context):
-    """Показать главное меню админки"""
-    keyboard = [
-    [
-        InlineKeyboardButton("📢 Рассылка", callback_data="admin:broadcast"),
-        InlineKeyboardButton("📊 Статистика", callback_data="admin:stats")
-    ],
-    [
-        InlineKeyboardButton("👥 Пользователи", callback_data="admin:users"),
-        InlineKeyboardButton("🎮 Игры", callback_data="admin:games")
-    ],
-    [
-        InlineKeyboardButton("⚙️ Настройки", callback_data="admin:settings"),
-        InlineKeyboardButton("🔄 Автопост", callback_data="admin:autopost")
-    ],
-    [
-        InlineKeyboardButton("📝 Логи", callback_data="admin:logs"),
-        InlineKeyboardButton("ℹ️ Помощь", callback_data="admin:help")
-    ]
+
+# ===============================
+# Экспорт функций
+# ===============================
+__all__ = [
+    'admin_command',
+    'execute_broadcast',
+    'say_command',
+    'broadcast_command',
+    'sendstats_command',
+    'handle_admin_callback'
 ]
