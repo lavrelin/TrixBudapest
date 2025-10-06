@@ -188,8 +188,6 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📝 **Использование:**\n\n"
             "**Ответом на сообщение:**\n"
             "`/say текст сообщения` (reply)\n\n"
-            "**Указав username:**\n"
-            "`/say @username текст`\n\n"
             "**Указав user ID:**\n"
             "`/say 123456789 текст`\n\n"
             "Бот отправит сообщение пользователю в личные сообщения",
@@ -200,62 +198,41 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Определяем получателя
     target_user_id = None
     message_text = None
-    target_username = None
+    target_username = "пользователь"
     
-    # Вариант 1: Reply на сообщение
+    # Вариант 1: Reply на сообщение (ПРИОРИТЕТНЫЙ)
     if update.message.reply_to_message:
         target_user_id = update.message.reply_to_message.from_user.id
         target_username = update.message.reply_to_message.from_user.username or f"ID_{target_user_id}"
         message_text = ' '.join(context.args)
+        
+        logger.info(f"Say via reply: target={target_user_id}, username={target_username}")
     
-    # Вариант 2: Username или ID в аргументах
-    else:
-        first_arg = context.args[0]
+    # Вариант 2: User ID в аргументах
+    elif context.args[0].isdigit():
+        target_user_id = int(context.args[0])
+        message_text = ' '.join(context.args[1:])
         
-        # Проверяем username
-        if first_arg.startswith('@'):
-            from data.user_data import get_user_by_username
-            username = first_arg[1:]
-            user_info = get_user_by_username(username)
-            
-            if user_info:
-                target_user_id = user_info['id']
-                target_username = username
-                message_text = ' '.join(context.args[1:])
-            else:
-                await update.message.reply_text(
-                    f"❌ Пользователь @{username} не найден в базе данных\n\n"
-                    "Пользователь должен хотя бы раз использовать бота"
-                )
-                return
-        
-        # Проверяем user ID
-        elif first_arg.isdigit():
+        # Пытаемся найти username в базе (опционально)
+        try:
             from data.user_data import get_user_by_id
-            user_id = int(first_arg)
-            user_info = get_user_by_id(user_id)
-            
+            user_info = get_user_by_id(target_user_id)
             if user_info:
-                target_user_id = user_id
                 target_username = user_info['username']
-                message_text = ' '.join(context.args[1:])
-            else:
-                await update.message.reply_text(
-                    f"❌ Пользователь с ID {user_id} не найден в базе данных\n\n"
-                    "Пользователь должен хотя бы раз использовать бота"
-                )
-                return
+        except:
+            pass
         
-        else:
-            await update.message.reply_text(
-                "❌ Неверный формат\n\n"
-                "Используйте:\n"
-                "• `/say @username текст`\n"
-                "• `/say USER_ID текст`\n"
-                "• Или ответьте на сообщение: `/say текст`",
-                parse_mode='Markdown'
-            )
-            return
+        logger.info(f"Say via ID: target={target_user_id}, username={target_username}")
+    
+    else:
+        await update.message.reply_text(
+            "❌ Неверный формат\n\n"
+            "Используйте:\n"
+            "• `/say USER_ID текст`\n"
+            "• Или ответьте на сообщение: `/say текст`",
+            parse_mode='Markdown'
+        )
+        return
     
     # Проверяем наличие текста
     if not message_text or not message_text.strip():
@@ -283,28 +260,31 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Подтверждение админу
+        confirmation_msg = f"✅ Сообщение отправлено пользователю @{target_username} (ID: `{target_user_id}`)"
+        
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text=f"✅ Сообщение отправлено пользователю @{target_username} (ID: `{target_user_id}`)",
+                text=confirmation_msg,
                 parse_mode='Markdown'
             )
         except Exception:
             # Если не удалось отправить в ЛС админу, отправляем в текущий чат
             if update.effective_chat.type == 'private':
-                await update.message.reply_text(
-                    f"✅ Сообщение отправлено пользователю @{target_username}",
-                    parse_mode='Markdown'
-                )
+                await update.message.reply_text(confirmation_msg, parse_mode='Markdown')
             
     except Exception as e:
-        logger.error(f"Error sending PM in say command: {e}")
-        error_msg = f"❌ Не удалось отправить сообщение пользователю @{target_username}\n\n"
+        logger.error(f"Error sending PM in say command to {target_user_id}: {e}")
         
-        if "bot was blocked by the user" in str(e).lower():
+        error_msg = f"❌ Не удалось отправить сообщение пользователю @{target_username} (ID: {target_user_id})\n\n"
+        
+        error_str = str(e).lower()
+        if "bot was blocked by the user" in error_str:
             error_msg += "Причина: Пользователь заблокировал бота"
-        elif "chat not found" in str(e).lower():
-            error_msg += "Причина: Чат не найден"
+        elif "user not found" in error_str or "chat not found" in error_str:
+            error_msg += "Причина: Пользователь не найден или никогда не запускал бота"
+        elif "forbidden" in error_str:
+            error_msg += "Причина: Бот не может отправить сообщение этому пользователю"
         else:
             error_msg += f"Причина: {str(e)[:100]}"
         
