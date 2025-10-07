@@ -172,13 +172,10 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ===============================
-# Команда /say
-# ===============================
-# ===============================
-# Команда /say
+# ИСПРАВЛЕННАЯ Команда /say
 # ===============================
 async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправка сообщения пользователю в ЛС от имени бота"""
+    """Отправка сообщения пользователю в ЛС от имени бота - ИСПРАВЛЕНО"""
     if not Config.is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет прав для использования этой команды")
         return
@@ -186,23 +183,21 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "📝 **Использование:**\n\n"
-            "**Ответом на сообщение:**\n"
+            "**Ответом на сообщение (САМЫЙ НАДЁЖНЫЙ):**\n"
             "`/say текст` (reply)\n\n"
-            "**По username:**\n"
-            "`/say @username текст`\n\n"
             "**По user ID:**\n"
             "`/say 123456789 текст`\n\n"
-            "💡 Самый надёжный способ - ответить на сообщение пользователя",
+            "⚠️ **Username (@username) НЕ РАБОТАЕТ** - Telegram не предоставляет API для поиска по username!\n"
+            "Используйте только ID или reply.",
             parse_mode='Markdown'
         )
         return
     
-    # Определяем получателя
     target_user_id = None
     message_text = None
     target_username = "пользователь"
     
-    # Вариант 1: Reply на сообщение (ПРИОРИТЕТНЫЙ и самый надёжный)
+    # Вариант 1: Reply на сообщение (САМЫЙ НАДЁЖНЫЙ)
     if update.message.reply_to_message:
         target_user_id = update.message.reply_to_message.from_user.id
         target_username = update.message.reply_to_message.from_user.username or f"ID_{target_user_id}"
@@ -210,168 +205,172 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Say via reply: target={target_user_id}, username={target_username}")
     
-    # Вариант 2: Username (@username)
-    elif context.args[0].startswith('@'):
-        username = context.args[0][1:]  # Убираем @
-        message_text = ' '.join(context.args[1:])
-        
-        if not message_text.strip():
-            await update.message.reply_text("❌ Не указан текст сообщения после username")
-            return
-        
-        # Пытаемся найти user_id в нашей базе данных
-        try:
-            from data.user_data import get_user_by_username
-            user_info = get_user_by_username(username)
-            
-            if user_info:
-                target_user_id = user_info['id']
-                target_username = username
-                logger.info(f"Say via username (found in DB): @{username} -> {target_user_id}")
-            else:
-                # Пользователь не найден в нашей базе
-                await update.message.reply_text(
-                    f"❌ Пользователь @{username} не найден в базе бота\n\n"
-                    "⚠️ Чтобы отправить сообщение:\n"
-                    "1. Попросите пользователя написать боту `/start`\n"
-                    "2. Или используйте его user ID: `/say USER_ID текст`\n"
-                    "3. Или ответьте на его сообщение: `/say текст` (reply)\n\n"
-                    "💡 Reply на сообщение - самый надёжный способ!"
-                )
-                return
-        except Exception as e:
-            logger.error(f"Error searching username: {e}")
-            await update.message.reply_text(
-                f"❌ Ошибка поиска пользователя @{username}\n\n"
-                "Попробуйте другой способ или обратитесь к разработчику"
-            )
-            return
-    
-    # Вариант 3: User ID (только цифры)
+    # Вариант 2: User ID (РАБОТАЕТ)
     elif context.args[0].isdigit():
         target_user_id = int(context.args[0])
         message_text = ' '.join(context.args[1:])
         
         if not message_text.strip():
-            await update.message.reply_text("❌ Не указан текст сообщения после user ID")
+            await update.message.reply_text("❌ Не указан текст сообщения после ID")
             return
         
-        # Пытаемся найти username в базе (опционально)
+        # Пытаемся найти username в локальной базе
         try:
             from data.user_data import get_user_by_id
             user_info = get_user_by_id(target_user_id)
             if user_info:
-                target_username = user_info['username']
-        except:
-            pass
+                target_username = user_info.get('username', f"ID_{target_user_id}")
+            else:
+                target_username = f"ID_{target_user_id}"
+        except Exception as e:
+            logger.warning(f"Could not find username for {target_user_id}: {e}")
+            target_username = f"ID_{target_user_id}"
         
         logger.info(f"Say via ID: target={target_user_id}, username={target_username}")
+    
+    # Вариант 3: Username - НЕ ПОДДЕРЖИВАЕТСЯ (объясняем почему)
+    elif context.args[0].startswith('@'):
+        username = context.args[0][1:]
+        await update.message.reply_text(
+            f"❌ **Username не поддерживается**\n\n"
+            f"Telegram Bot API **не предоставляет** способа найти user_id по username.\n\n"
+            f"**Решения:**\n"
+            f"1. **Попросите @{username} написать `/start` боту** - тогда он появится в базе\n"
+            f"2. **Используйте reply** - ответьте на любое сообщение пользователя\n"
+            f"3. **Узнайте его ID** - используйте `/whois` на сообщение пользователя\n\n"
+            f"💡 После того как пользователь напишет `/start`, используйте `/whois @{username}` чтобы узнать его ID",
+            parse_mode='Markdown'
+        )
+        return
     
     else:
         await update.message.reply_text(
             "❌ Неверный формат\n\n"
-            "Используйте:\n"
-            "• `/say @username текст`\n"
-            "• `/say USER_ID текст`\n"
-            "• Или ответьте на сообщение: `/say текст`\n\n"
-            "💡 Reply - самый надёжный способ!",
+            "**Используйте:**\n"
+            "• `/say USER_ID текст` - по ID (работает)\n"
+            "• Или reply: `/say текст` - на сообщение (работает)\n\n"
+            "⚠️ Username НЕ РАБОТАЕТ из-за ограничений Telegram API",
             parse_mode='Markdown'
         )
         return
     
-    # ИСПРАВЛЕНО: Дополнительная проверка текста
+    # Проверка текста
     if not message_text or not message_text.strip():
         await update.message.reply_text("❌ Не указан текст сообщения")
         return
     
-    # Удаляем команду если в группе
+    # Удаляем команду из группы
     if update.effective_chat.type != 'private':
         try:
             await update.message.delete()
+            logger.info(f"Deleted /say command from group")
         except Exception as e:
             logger.warning(f"Could not delete say command: {e}")
     
-    # ИСПРАВЛЕНО: Отправляем сообщение пользователю в ЛС с улучшенной обработкой ошибок
+    # Отправляем сообщение
     try:
-        # Экранируем markdown символы в тексте пользователя
-        safe_message = message_text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+        # Экранируем специальные символы markdown
+        def escape_markdown(text):
+            if not text:
+                return text
+            replacements = {
+                '_': '\\_',
+                '*': '\\*',
+                '[': '\\[',
+                ']': '\\]',
+                '(': '\\(',
+                ')': '\\)',
+                '~': '\\~',
+                '`': '\\`',
+                '>': '\\>',
+                '#': '\\#',
+                '+': '\\+',
+                '-': '\\-',
+                '=': '\\=',
+                '|': '\\|',
+                '{': '\\{',
+                '}': '\\}',
+                '.': '\\.',
+                '!': '\\!'
+            }
+            for old, new in replacements.items():
+                text = text.replace(old, new)
+            return text
+        
+        safe_text = escape_markdown(message_text)
         
         await context.bot.send_message(
             chat_id=target_user_id,
-            text=f"📨 **Сообщение от администрации:**\n\n{safe_message}",
-            parse_mode='Markdown'
+            text=f"📨 *Сообщение от администрации:*\n\n{safe_text}",
+            parse_mode='MarkdownV2'
         )
         
         logger.info(
-            f"Say command SUCCESS: {update.effective_user.username} "
-            f"sent PM to @{target_username} (ID: {target_user_id}): {message_text[:50]}"
+            f"✅ Say SUCCESS: admin {update.effective_user.id} -> user {target_user_id}"
         )
         
-        # Подтверждение админу в ЛС
-        confirmation_msg = (
-            f"✅ **Сообщение успешно отправлено!**\n\n"
-            f"👤 Получатель: @{target_username}\n"
+        # Подтверждение админу
+        confirmation = (
+            f"✅ **Сообщение доставлено\\!**\n\n"
+            f"👤 Получатель: {escape_markdown(target_username)}\n"
             f"🆔 ID: `{target_user_id}`\n"
-            f"📝 Текст: {message_text[:100]}{'...' if len(message_text) > 100 else ''}"
+            f"📝 Текст \\({len(message_text)} символов\\):\n"
+            f"_{safe_text[:100]}{'\\.\\.\\.' if len(message_text) > 100 else ''}_"
         )
         
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text=confirmation_msg,
-                parse_mode='Markdown'
+                text=confirmation,
+                parse_mode='MarkdownV2'
             )
-        except Exception as notify_error:
-            # Если не удалось отправить в ЛС админу, отправляем в текущий чат
-            logger.warning(f"Could not send confirmation to admin PM: {notify_error}")
+        except Exception as conf_error:
+            logger.warning(f"Could not send confirmation: {conf_error}")
             if update.effective_chat.type == 'private':
-                await update.message.reply_text(confirmation_msg, parse_mode='Markdown')
+                # Простое сообщение без markdown
+                await update.message.reply_text(
+                    f"✅ Сообщение отправлено пользователю {target_user_id}"
+                )
             
     except Exception as e:
-        logger.error(f"Error sending PM in say command to {target_user_id}: {e}", exc_info=True)
+        logger.error(f"❌ Say FAILED: {e}", exc_info=True)
+        
+        error_str = str(e).lower()
+        
+        if "blocked" in error_str:
+            reason = "Пользователь заблокировал бота"
+        elif "not found" in error_str or "chat not found" in error_str:
+            reason = "Пользователь не найден или не запускал бота"
+        elif "deactivated" in error_str:
+            reason = "Аккаунт пользователя деактивирован"
+        elif "forbidden" in error_str:
+            reason = "Бот не может писать этому пользователю"
+        else:
+            reason = str(e)[:150]
         
         error_msg = (
-            f"❌ **Не удалось отправить сообщение**\n\n"
-            f"👤 Получатель: @{target_username}\n"
-            f"🆔 ID: `{target_user_id}`\n\n"
-        )
-        
-        # Определяем причину ошибки
-        error_str = str(e).lower()
-        if "bot was blocked" in error_str or "user is deactivated" in error_str:
-            error_msg += "**Причина:** Пользователь заблокировал бота или удалил аккаунт"
-        elif "user not found" in error_str or "chat not found" in error_str:
-            error_msg += "**Причина:** Пользователь не найден или никогда не запускал бота"
-        elif "forbidden" in error_str:
-            error_msg += "**Причина:** Бот не может отправить сообщение (возможно заблокирован пользователем)"
-        elif "invalid user" in error_str or "bad request" in error_str:
-            error_msg += "**Причина:** Неверный ID пользователя"
-        else:
-            error_msg += f"**Причина:** {str(e)[:150]}"
-        
-        error_msg += (
-            f"\n\n**Решения:**\n"
+            f"❌ **Не удалось отправить**\n\n"
+            f"👤 Получатель: {target_username}\n"
+            f"🆔 ID: `{target_user_id}`\n"
+            f"📝 Причина: {reason}\n\n"
+            f"**Что делать:**\n"
             f"• Попросите пользователя написать `/start` боту\n"
             f"• Проверьте правильность ID\n"
-            f"• Используйте reply на сообщение пользователя"
+            f"• Убедитесь что пользователь не заблокировал бота"
         )
         
-        # Отправляем сообщение об ошибке
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
                 text=error_msg,
                 parse_mode='Markdown'
             )
-        except Exception as error_notify_fail:
-            logger.error(f"Could not notify admin about error: {error_notify_fail}")
-            # Последняя попытка - в текущий чат
+        except:
             if update.effective_chat.type == 'private':
-                try:
-                    await update.message.reply_text(error_msg, parse_mode='Markdown')
-                except:
-                    # Совсем простое сообщение без markdown
-                    await update.message.reply_text(f"Ошибка отправки сообщения пользователю {target_user_id}")
+                await update.message.reply_text(
+                    f"Ошибка: не удалось отправить сообщение пользователю {target_user_id}"
+                )
+
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Рассылка сообщения всем пользователям"""
@@ -662,7 +661,8 @@ async def show_admin_help(query, context):
         "ℹ️ **СПРАВКА ДЛЯ АДМИНОВ**\n\n"
         "**📢 Рассылка:**\n"
         "• `/broadcast текст` - отправить всем\n"
-        "• `/say текст` - отправить в текущий чат\n\n"
+        "• `/say USER_ID текст` - отправить по ID\n"
+        "• `/say текст` (reply) - ответить пользователю\n\n"
         "**📊 Статистика:**\n"
         "• `/stats` - общая статистика\n"
         "• `/sendstats` - в админскую группу\n"
