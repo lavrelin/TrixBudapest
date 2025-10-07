@@ -1,4 +1,4 @@
-## -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -269,40 +269,10 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Отправляем сообщение
     try:
-        # Экранируем специальные символы markdown
-        def escape_markdown(text):
-            if not text:
-                return text
-            replacements = {
-                '_': '\\_',
-                '*': '\\*',
-                '[': '\\[',
-                ']': '\\]',
-                '(': '\\(',
-                ')': '\\)',
-                '~': '\\~',
-                '`': '\\`',
-                '>': '\\>',
-                '#': '\\#',
-                '+': '\\+',
-                '-': '\\-',
-                '=': '\\=',
-                '|': '\\|',
-                '{': '\\{',
-                '}': '\\}',
-                '.': '\\.',
-                '!': '\\!'
-            }
-            for old, new in replacements.items():
-                text = text.replace(old, new)
-            return text
-        
-        safe_text = escape_markdown(message_text)
-        
         await context.bot.send_message(
             chat_id=target_user_id,
-            text=f"📨 *Сообщение от администрации:*\n\n{safe_text}",
-            parse_mode='MarkdownV2'
+            text=f"📨 **Сообщение от администрации:**\n\n{message_text}",
+            parse_mode='Markdown'
         )
         
         logger.info(
@@ -311,23 +281,22 @@ async def say_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Подтверждение админу
         confirmation = (
-            f"✅ **Сообщение доставлено\\!**\n\n"
-            f"👤 Получатель: {escape_markdown(target_username)}\n"
+            f"✅ **Сообщение доставлено!**\n\n"
+            f"👤 Получатель: {target_username}\n"
             f"🆔 ID: `{target_user_id}`\n"
-            f"📝 Текст \\({len(message_text)} символов\\):\n"
-            f"_{safe_text[:100]}{'\\.\\.\\.' if len(message_text) > 100 else ''}_"
+            f"📝 Текст ({len(message_text)} символов):\n"
+            f"_{message_text[:100]}{'...' if len(message_text) > 100 else ''}_"
         )
         
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
                 text=confirmation,
-                parse_mode='MarkdownV2'
+                parse_mode='Markdown'
             )
         except Exception as conf_error:
             logger.warning(f"Could not send confirmation: {conf_error}")
             if update.effective_chat.type == 'private':
-                # Простое сообщение без markdown
                 await update.message.reply_text(
                     f"✅ Сообщение отправлено пользователю {target_user_id}"
                 )
@@ -561,12 +530,14 @@ async def show_games_info(query, context):
             f"• Интервал попыток: {interval} мин\n\n"
         )
     
-    text += (
+    # ИСПРАВЛЕНО: убран f-string с backslash
+    commands_text = (
         "📝 **Команды:**\n"
-        f"• `/{'{version}'}guide` - справка для админов\n"
-        f"• `/{'{version}'}start` - запустить конкурс\n"
-        f"• `/{'{version}'}rollstart N` - провести розыгрыш"
+        "• `/needguide`, `/tryguide`, `/moreguide`\n"
+        "• `/needstart`, `/trystart`, `/morestart`\n"
+        "• `/needrollstart N`, `/tryrollstart N`"
     )
+    text += commands_text
     
     keyboard = [
         [InlineKeyboardButton("🔄 Обновить", callback_data="admin:games")],
@@ -674,9 +645,9 @@ async def show_admin_help(query, context):
         "• `/unmute @user`\n"
         "• `/banlist`\n\n"
         "**🎮 Игры:**\n"
-        "• `/{version}add слово`\n"
-        "• `/{version}start`\n"
-        "• `/{version}rollstart N`\n\n"
+        "• `/needadd`, `/tryadd`, `/moreadd`\n"
+        "• `/needstart`, `/trystart`, `/morestart`\n"
+        "• `/needrollstart N`\n\n"
         "**🔄 Автопостинг:**\n"
         "• `/autopost` - управление\n"
         "• `/autoposttest` - тест\n\n"
