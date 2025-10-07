@@ -30,7 +30,7 @@ from handlers.profile_handler import handle_profile_callback
 from handlers.basic_handler import (
     id_command, participants_command, report_command
 )
-from handlers.link_handler import trixlinks_command  # только trixlinks
+from handlers.link_handler import trixlinks_command
 from handlers.moderation_commands import (
     ban_command, unban_command, mute_command, unmute_command,
     banlist_command, stats_command, top_command, lastseen_command
@@ -60,8 +60,8 @@ from handlers.stats_commands import (
     resetmsgcount_command, chatinfo_command
 )
 from handlers.help_commands import trix_command, handle_trix_callback
-from handlers.social_handler import social_command, giveaway_command  # Новые
-from handlers.bonus_handler import bonus_command  # Новый
+from handlers.social_handler import social_command, giveaway_command
+from handlers.bonus_handler import bonus_command
 
 # ===============================
 # Services
@@ -216,9 +216,9 @@ fullstats_command = ignore_budapest_chat_commands(fullstats_command)
 resetmsgcount_command = ignore_budapest_chat_commands(resetmsgcount_command)
 chatinfo_command = ignore_budapest_chat_commands(chatinfo_command)
 trixlinks_command = ignore_budapest_chat_commands(trixlinks_command)
-social_command = ignore_budapest_chat_commands(social_command)  # НОВОЕ
-giveaway_command = ignore_budapest_chat_commands(giveaway_command)  # НОВОЕ
-bonus_command = ignore_budapest_chat_commands(bonus_command)  # НОВОЕ
+social_command = ignore_budapest_chat_commands(social_command)
+giveaway_command = ignore_budapest_chat_commands(giveaway_command)
+bonus_command = ignore_budapest_chat_commands(bonus_command)
 ban_command = ignore_budapest_chat_commands(ban_command)
 unban_command = ignore_budapest_chat_commands(unban_command)
 mute_command = ignore_budapest_chat_commands(mute_command)
@@ -382,7 +382,7 @@ async def error_handler(update: object, context):
             pass
 
 def main():
-    """Главная функция запуска бота"""
+    """Главная функция запуска бота - ИСПРАВЛЕНО"""
     if not Config.BOT_TOKEN:
         logger.error("❌ BOT_TOKEN not found!")
         return
@@ -395,6 +395,7 @@ def main():
     print(f"📊 Database: {Config.DATABASE_URL[:30]}...")
     print(f"🚫 Budapest chat ID: {Config.BUDAPEST_CHAT_ID}")
     
+    # Инициализация БД
     db_initialized = loop.run_until_complete(init_db_tables())
     
     if not db_initialized:
@@ -403,8 +404,10 @@ def main():
     else:
         print("✅ Database connected")
     
+    # Создаём application
     application = Application.builder().token(Config.BOT_TOKEN).build()
     
+    # Настройка сервисов
     autopost_service.set_bot(application.bot)
     admin_notifications.set_bot(application.bot)
     channel_stats.set_bot(application.bot)
@@ -417,7 +420,6 @@ def main():
     application.add_handler(CommandHandler("trix", trix_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hp", hp_command))
-    # НОВЫЕ КОМАНДЫ
     application.add_handler(CommandHandler("social", social_command))
     application.add_handler(CommandHandler("giveaway", giveaway_command))
     application.add_handler(CommandHandler("bonus", bonus_command))
@@ -425,18 +427,19 @@ def main():
     application.add_handler(CommandHandler("participants", participants_command))
     application.add_handler(CommandHandler("report", report_command))
     
+    # Админские команды
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("say", say_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("sendstats", sendstats_command))
     
+    # Статистика
     application.add_handler(CommandHandler("channelstats", channelstats_command))
     application.add_handler(CommandHandler("fullstats", fullstats_command))
     application.add_handler(CommandHandler("resetmsgcount", resetmsgcount_command))
     application.add_handler(CommandHandler("chatinfo", chatinfo_command))
     
-    # УДАЛЕНЫ: trixlinksadd, trixlinksedit, trixlinksdelete
-    
+    # Модерация
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
     application.add_handler(CommandHandler("mute", mute_command))
@@ -446,6 +449,7 @@ def main():
     application.add_handler(CommandHandler("top", top_command))
     application.add_handler(CommandHandler("lastseen", lastseen_command))
     
+    # Расширенная модерация
     application.add_handler(CommandHandler("del", del_command))
     application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(CommandHandler("slowmode", slowmode_command))
@@ -455,6 +459,7 @@ def main():
     application.add_handler(CommandHandler("tagall", tagall_command))
     application.add_handler(CommandHandler("admins", admins_command))
     
+    # Автопост
     application.add_handler(CommandHandler("autopost", autopost_command))
     application.add_handler(CommandHandler("autoposttest", autopost_test_command))
     
@@ -480,6 +485,7 @@ def main():
     application.add_handler(CommandHandler("edit", wordedit_command))
     application.add_handler(CommandHandler("wordclear", wordclear_command))
     
+    # Обработчики callback и сообщений
     application.add_handler(CallbackQueryHandler(handle_all_callbacks))
     application.add_handler(MessageHandler(
         filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
@@ -488,6 +494,7 @@ def main():
     
     application.add_error_handler(error_handler)
     
+    # Запуск сервисов
     if Config.SCHEDULER_ENABLED:
         loop.create_task(autopost_service.start())
         print("✅ Autopost enabled")
@@ -512,7 +519,52 @@ def main():
     
     print("="*50 + "\n")
     
-    application.run_polling(allowed_updates=["message", "callback_query"])
+    try:
+        # Запуск бота с корректной обработкой остановки
+        application.run_polling(
+            allowed_updates=["message", "callback_query"],
+            drop_pending_updates=True  # Игнорируем старые updates при запуске
+        )
+    except KeyboardInterrupt:
+        logger.info("Received KeyboardInterrupt")
+        print("\n🛑 Stopping bot...")
+    except Exception as e:
+        logger.error(f"Error in main loop: {e}", exc_info=True)
+        print(f"\n❌ Error: {e}")
+    finally:
+        # Корректное завершение
+        print("🔄 Cleaning up...")
+        
+        try:
+            # Останавливаем сервисы
+            loop.run_until_complete(stats_scheduler.stop())
+            loop.run_until_complete(autopost_service.stop())
+            
+            # Закрываем БД
+            loop.run_until_complete(db.close())
+            
+            print("✅ Cleanup complete")
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup: {cleanup_error}")
+            print(f"⚠️ Cleanup error: {cleanup_error}")
+        
+        # Закрываем loop
+        try:
+            # Отменяем все оставшиеся задачи
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            
+            # Даём задачам завершиться
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            
+            loop.close()
+            print("✅ Event loop closed")
+        except Exception as loop_error:
+            logger.error(f"Error closing loop: {loop_error}")
+            print(f"⚠️ Loop close error: {loop_error}")
+        
+        print("\n👋 TrixBot stopped")
 
 if __name__ == '__main__':
     main()
