@@ -563,9 +563,9 @@ async def show_games_info(query, context):
     
     text += (
         "📝 **Команды:**\n"
-        f"• `/{'{version}'}guide` - справка для админов\n"
-        f"• `/{'{version}'}start` - запустить конкурс\n"
-        f"• `/{'{version}'}rollstart N` - провести розыгрыш"
+        f"• `/{{version}}guide` - справка для админов\n"
+        f"• `/{{version}}start` - запустить конкурс\n"
+        f"• `/{{version}}rollstart N` - провести розыгрыш"
     )
     
     keyboard = [
@@ -578,60 +578,6 @@ async def show_games_info(query, context):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
-
-
-async def show_settings(query, context):
-    """Показать настройки"""
-    text = (
-        "⚙️ **НАСТРОЙКИ БОТА**\n\n"
-        f"🤖 Bot Token: {'✅ Установлен' if Config.BOT_TOKEN else '❌ Не установлен'}\n"
-        f"📢 Канал: {Config.TARGET_CHANNEL_ID}\n"
-        f"👮 Группа модерации: {Config.MODERATION_GROUP_ID}\n"
-        f"🔧 Админская группа: {Config.ADMIN_GROUP_ID}\n"
-        f"👑 Админов: {len(Config.ADMIN_IDS)}\n"
-        f"👮 Модераторов: {len(Config.MODERATOR_IDS)}\n"
-        f"⏱️ Кулдаун: {Config.COOLDOWN_SECONDS // 3600} часов\n"
-        f"🔄 Автопост: {'✅ Включен' if Config.SCHEDULER_ENABLED else '❌ Выключен'}\n"
-        f"📊 Статистика: каждые {Config.STATS_INTERVAL_HOURS} часов\n\n"
-        "Для изменения настроек используйте переменные окружения или .env файл"
-    )
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-
-async def show_autopost_info(query, context):
-    """Показать информацию об автопостинге"""
-    from services.autopost_service import autopost_service
-    
-    status_info = autopost_service.get_status()
-    status = "🟢 Активен" if status_info['running'] else "🔴 Остановлен"
-    
-    text = (
-        f"🔄 **АВТОПОСТИНГ**\n\n"
-        f"Статус: {status}\n"
-        f"⏱️ Интервал: {Config.SCHEDULER_MIN_INTERVAL}-{Config.SCHEDULER_MAX_INTERVAL} минут\n\n"
-        "**Команды:**\n"
-        "• `/autopost` - управление автопостингом\n"
-        "• `/autoposttest` - тестовая публикация"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("🔄 Обновить", callback_data="admin:autopost")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="admin:back")]
-    ]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
 
 async def show_logs(query, context):
     """Показать последние логи"""
