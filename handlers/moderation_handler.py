@@ -6,51 +6,54 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def handle_moderation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle moderation callbacks with BigInt support"""
+    """Handle moderation callbacks with improved error handling"""
     query = update.callback_query
-    await query.answer()
     
     user_id = update.effective_user.id
     
-    logger.info(f"Moderation callback from user {user_id}")
-    logger.info(f"Is moderator check: {Config.is_moderator(user_id)}")
+    logger.info(f"Moderation callback from user {user_id}: {query.data}")
     
     if not Config.is_moderator(user_id):
         await query.answer("❌ Доступ запрещен", show_alert=True)
         logger.warning(f"Access denied for user {user_id}")
         return
     
+    # Отвечаем на callback сразу чтобы убрать "часики"
+    await query.answer()
+    
     data = query.data.split(":")
     action = data[1] if len(data) > 1 else None
     post_id = int(data[2]) if len(data) > 2 and data[2].isdigit() else None
     
-    logger.info(f"Moderation callback: action={action}, post_id={post_id}, user_id={user_id}")
+    logger.info(f"Moderation: action={action}, post_id={post_id}, moderator={user_id}")
     
-    if action == "approve" and post_id:
-        await start_approve_process(update, context, post_id)
-    elif action == "approve_chat" and post_id:  # для актуальных постов
+    if not post_id:
+        logger.error(f"Missing post_id in callback: {query.data}")
+        await query.edit_message_text("❌ Ошибка: ID поста не указан")
+        return
+    
+    if action == "approve":
+        await start_approve_process(update, context, post_id, chat=False)
+    elif action == "approve_chat":
         await start_approve_process(update, context, post_id, chat=True)
-    elif action == "reject" and post_id:
+    elif action == "reject":
         await start_reject_process(update, context, post_id)
-    elif action == "edit" and post_id:
-        await query.answer("Редактирование в разработке", show_alert=True)
     else:
-        logger.error(f"Unknown action or missing post_id: action={action}, post_id={post_id}")
-        await query.answer("Неизвестное действие", show_alert=True)
+        logger.error(f"Unknown moderation action: {action}")
+        await query.edit_message_text("❌ Неизвестное действие")
 
 async def handle_moderation_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text input from moderators"""
     user_id = update.effective_user.id
     
-    logger.info(f"Moderation text from user {user_id}: {update.message.text[:50]}...")
+    logger.info(f"Moderation text from user {user_id}")
     
     if not Config.is_moderator(user_id):
         logger.warning(f"Non-moderator {user_id} tried to send moderation text")
         return
     
-    # Проверяем, ожидает ли бот ввод от модератора
     waiting_for = context.user_data.get('mod_waiting_for')
-    logger.info(f"Moderator {user_id} sent text, waiting_for: {waiting_for}")
+    logger.info(f"Moderator {user_id} waiting_for: {waiting_for}")
     
     if waiting_for == 'approve_link':
         await process_approve_with_link(update, context)
@@ -60,12 +63,20 @@ async def handle_moderation_text(update: Update, context: ContextTypes.DEFAULT_T
         logger.info(f"Moderator {user_id} sent text but not in moderation process")
 
 async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int, chat: bool = False):
-    """Start approval process - ask for publication link"""
+    """Start approval process - ИСПРАВЛЕНО: улучшенная обработка ошибок"""
     try:
-        logger.info(f"Starting approve process for post {post_id}")
+        logger.info(f"Starting approve process for post {post_id}, chat={chat}")
+        
+        # Проверяем доступность БД
+        from services.db import db
+        if not db.session_maker:
+            logger.error("Database not available")
+            await update.callback_query.edit_message_text(
+                "❌ База данных недоступна\nПопробуйте позже"
+            )
+            return
         
         try:
-            from services.db import db
             from models import Post
             from sqlalchemy import select
             
@@ -76,48 +87,73 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
                 post = result.scalar_one_or_none()
                 
                 if not post:
-                    logger.error(f"Post {post_id} not found")
-                    await update.callback_query.answer("❌ Пост не найден", show_alert=True)
+                    logger.error(f"❌ Post {post_id} not found in database")
+                    await update.callback_query.edit_message_text(
+                        f"❌ **Пост не найден**\n\n"
+                        f"Post ID: {post_id}\n\n"
+                        f"Возможные причины:\n"
+                        f"• Пост был удален\n"
+                        f"• Неверный ID\n"
+                        f"• Ошибка базы данных\n\n"
+                        f"Обратитесь к администратору."
+                    )
                     return
-                    
-                logger.info(f"Found post {post_id}, user {post.user_id}")
+                
+                logger.info(f"✅ Found post {post_id}, user {post.user_id}, status {post.status}")
                 
         except Exception as db_error:
-            logger.error(f"Database error when getting post {post_id}: {db_error}")
-            await update.callback_query.answer("❌ Ошибка базы данных", show_alert=True)
+            logger.error(f"Database error when getting post {post_id}: {db_error}", exc_info=True)
+            await update.callback_query.edit_message_text(
+                f"❌ **Ошибка базы данных**\n\n"
+                f"Post ID: {post_id}\n"
+                f"Ошибка: {str(db_error)[:100]}\n\n"
+                f"Попробуйте позже или обратитесь к администратору."
+            )
             return
         
-        # Store post info for later use
+        # Сохраняем данные для следующего шага
         context.user_data['mod_post_id'] = post_id
         context.user_data['mod_post_user_id'] = post.user_id
         context.user_data['mod_waiting_for'] = 'approve_link'
         context.user_data['mod_is_chat'] = chat
         
-        logger.info(f"Stored context data for approval: {context.user_data}")
+        logger.info(f"✅ Stored context for approval: post={post_id}, user={post.user_id}")
         
-        # Ask moderator for publication link
-        destination = "чате" if chat else "канале"
+        destination = "чате (будет закреплено)" if chat else "канале"
+        
         await update.callback_query.edit_message_text(
             f"✅ **ОДОБРЕНИЕ ЗАЯВКИ**\n\n"
-            f"Заявка будет одобрена и пользователь получит уведомление.\n\n"
-            f"📎 **Отправьте ссылку на пост в {destination}:**\n"
+            f"📊 Post ID: `{post_id}`\n"
+            f"👤 User ID: `{post.user_id}`\n"
+            f"📍 Публикация в: {destination}\n\n"
+            f"📎 **Отправьте ссылку на опубликованный пост:**\n"
             f"(Например: https://t.me/snghu/1234)\n\n"
-            f"⚠️ Отправьте только ссылку одним сообщением\n\n"
-            f"📊 Post ID: {post_id}\n"
-            f"👤 User ID: {post.user_id}"
+            f"⚠️ Сначала опубликуйте пост вручную, затем скопируйте ссылку\n\n"
+            f"💡 Отправьте только ссылку одним сообщением",
+            parse_mode='Markdown'
         )
         
     except Exception as e:
-        logger.error(f"Error starting approve process for post {post_id}: {e}")
-        await update.callback_query.answer("❌ Ошибка обработки заявки", show_alert=True)
+        logger.error(f"Error starting approve process: {e}", exc_info=True)
+        try:
+            await update.callback_query.edit_message_text(
+                f"❌ Ошибка обработки: {str(e)[:200]}"
+            )
+        except:
+            pass
 
 async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Start rejection process - ask for reason"""
+    """Start rejection process - ИСПРАВЛЕНО"""
     try:
         logger.info(f"Starting reject process for post {post_id}")
         
+        from services.db import db
+        if not db.session_maker:
+            logger.error("Database not available")
+            await update.callback_query.edit_message_text("❌ База данных недоступна")
+            return
+        
         try:
-            from services.db import db
             from models import Post
             from sqlalchemy import select
             
@@ -128,54 +164,69 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 post = result.scalar_one_or_none()
                 
                 if not post:
-                    logger.error(f"Post {post_id} not found")
-                    await update.callback_query.answer("❌ Пост не найден", show_alert=True)
+                    logger.error(f"❌ Post {post_id} not found")
+                    await update.callback_query.edit_message_text(
+                        f"❌ Пост {post_id} не найден"
+                    )
                     return
-                    
-                logger.info(f"Found post {post_id}, user {post.user_id}")
+                
+                logger.info(f"✅ Found post {post_id} for rejection")
                 
         except Exception as db_error:
-            logger.error(f"Database error when getting post {post_id}: {db_error}")
-            await update.callback_query.answer("❌ Ошибка базы данных", show_alert=True)
+            logger.error(f"Database error: {db_error}", exc_info=True)
+            await update.callback_query.edit_message_text(
+                f"❌ Ошибка БД: {str(db_error)[:100]}"
+            )
             return
         
-        # Store post info for later use
+        # Сохраняем данные
         context.user_data['mod_post_id'] = post_id
         context.user_data['mod_post_user_id'] = post.user_id
         context.user_data['mod_waiting_for'] = 'reject_reason'
         
-        logger.info(f"Stored context data for rejection: {context.user_data}")
+        logger.info(f"✅ Stored context for rejection: post={post_id}")
         
-        # Ask moderator for rejection reason
         await update.callback_query.edit_message_text(
             f"❌ **ОТКЛОНЕНИЕ ЗАЯВКИ**\n\n"
-            f"Заявка будет отклонена и пользователь получит уведомление.\n\n"
+            f"📊 Post ID: `{post_id}`\n"
+            f"👤 User ID: `{post.user_id}`\n\n"
             f"📝 **Напишите причину отклонения:**\n"
             f"(Будет отправлена пользователю)\n\n"
-            f"⚠️ Отправьте причину одним сообщением\n\n"
-            f"📊 Post ID: {post_id}\n"
-            f"👤 User ID: {post.user_id}"
+            f"⚠️ Отправьте причину одним сообщением",
+            parse_mode='Markdown'
         )
         
     except Exception as e:
-        logger.error(f"Error starting reject process for post {post_id}: {e}")
-        await update.callback_query.answer("❌ Ошибка обработки заявки", show_alert=True)
+        logger.error(f"Error starting reject process: {e}", exc_info=True)
+        try:
+            await update.callback_query.edit_message_text(f"❌ Ошибка: {str(e)[:200]}")
+        except:
+            pass
 
 async def process_approve_with_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process approval with publication link"""
+    """Process approval with publication link - ИСПРАВЛЕНО"""
     try:
         link = update.message.text.strip()
         post_id = context.user_data.get('mod_post_id')
         user_id = context.user_data.get('mod_post_user_id')
         is_chat = context.user_data.get('mod_is_chat', False)
         
-        logger.info(f"Processing approval: post_id={post_id}, user_id={user_id}, link={link}")
+        logger.info(f"Processing approval: post={post_id}, user={user_id}, link={link}")
         
         if not post_id or not user_id:
+            logger.error("Missing post_id or user_id in context")
             await update.message.reply_text("❌ Ошибка: данные заявки не найдены")
             return
         
-        # Update post status in DB - ИСПРАВЛЕНО: используем правильные значения enum
+        # Проверка ссылки
+        if not link.startswith('https://t.me/'):
+            await update.message.reply_text(
+                "❌ Неверный формат ссылки\n\n"
+                "Ссылка должна начинаться с https://t.me/"
+            )
+            return
+        
+        # Обновляем статус поста
         try:
             from services.db import db
             from models import Post, PostStatus
@@ -187,27 +238,26 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
                 )
                 post = result.scalar_one_or_none()
                 
-                if post:
-                    # ИСПРАВЛЕНО: используем enum PostStatus вместо строки
-                    post.status = PostStatus.APPROVED  # Вместо 'approved'
-                    await session.commit()
-                    logger.info(f"Updated post {post_id} status to approved")
-                else:
-                    logger.error(f"Post {post_id} not found for status update")
-                    await update.message.reply_text("❌ Заявка не найдена")
+                if not post:
+                    logger.error(f"Post {post_id} not found for approval")
+                    await update.message.reply_text(f"❌ Пост {post_id} не найден")
                     return
-                    
+                
+                post.status = PostStatus.APPROVED
+                await session.commit()
+                logger.info(f"✅ Post {post_id} status updated to APPROVED")
+                
         except Exception as db_error:
-            logger.error(f"Database error updating post {post_id}: {db_error}")
-            await update.message.reply_text("❌ Ошибка обновления статуса заявки")
+            logger.error(f"Database error updating post: {db_error}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # Send notification to user
+        # Отправляем уведомление пользователю
         try:
             destination_text = "чате" if is_chat else "канале"
             success_keyboard = [
                 [InlineKeyboardButton("📺 Перейти к посту", url=link)],
-                [InlineKeyboardButton("📺 Наш канал", url="https://t.me/snghu")],
+                [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
                 [InlineKeyboardButton("📚 Каталог услуг", url="https://t.me/trixvault")]
             ]
             
@@ -215,7 +265,7 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
                 chat_id=user_id,
                 text=f"✅ **Ваша заявка одобрена!**\n\n"
                      f"📝 Ваш пост опубликован в {destination_text}.\n\n"
-                     f"🔗 **Ссылка на публикацию:**\n{link}\n\n"
+                     f"🔗 **Ссылка:**\n{link}\n\n"
                      f"🔔 *Подписывайтесь на наши каналы:*",
                 reply_markup=InlineKeyboardMarkup(success_keyboard),
                 parse_mode='Markdown'
@@ -223,45 +273,50 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             
             await update.message.reply_text(
                 f"✅ **ЗАЯВКА ОДОБРЕНА**\n\n"
-                f"👤 Пользователю отправлено уведомление\n"
+                f"👤 Пользователь уведомлен\n"
                 f"🔗 Ссылка: {link}\n"
                 f"📊 Post ID: {post_id}",
                 parse_mode='Markdown'
             )
             
-            logger.info(f"Successfully approved post {post_id} for user {user_id}")
+            logger.info(f"✅ Successfully approved post {post_id}")
             
         except Exception as notify_error:
-            logger.error(f"Error notifying user {user_id}: {notify_error}")
+            logger.error(f"Error notifying user: {notify_error}", exc_info=True)
             await update.message.reply_text(
                 f"⚠️ Заявка одобрена, но не удалось уведомить пользователя\n"
                 f"User ID: {user_id}\nPost ID: {post_id}"
             )
         
-        # Clear context
+        # Очищаем контекст
         context.user_data.pop('mod_post_id', None)
         context.user_data.pop('mod_post_user_id', None)
         context.user_data.pop('mod_waiting_for', None)
         context.user_data.pop('mod_is_chat', None)
         
     except Exception as e:
-        logger.error(f"Error processing approval: {e}")
-        await update.message.reply_text("❌ Ошибка обработки одобрения")
+        logger.error(f"Error processing approval: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
 
 async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process rejection with reason"""
+    """Process rejection with reason - ИСПРАВЛЕНО"""
     try:
         reason = update.message.text.strip()
         post_id = context.user_data.get('mod_post_id')
         user_id = context.user_data.get('mod_post_user_id')
         
-        logger.info(f"Processing rejection: post_id={post_id}, user_id={user_id}, reason={reason[:50]}...")
+        logger.info(f"Processing rejection: post={post_id}, user={user_id}")
         
         if not post_id or not user_id:
-            await update.message.reply_text("❌ Ошибка: данные заявки не найдены")
+            logger.error("Missing data in context")
+            await update.message.reply_text("❌ Ошибка: данные не найдены")
             return
         
-        # Update post status in DB - ИСПРАВЛЕНО: используем правильные значения enum
+        if not reason or len(reason) < 5:
+            await update.message.reply_text("❌ Причина слишком короткая (минимум 5 символов)")
+            return
+        
+        # Обновляем статус
         try:
             from services.db import db
             from models import Post, PostStatus
@@ -273,22 +328,21 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
                 )
                 post = result.scalar_one_or_none()
                 
-                if post:
-                    # ИСПРАВЛЕНО: используем enum PostStatus вместо строки
-                    post.status = PostStatus.REJECTED  # Вместо 'rejected'
-                    await session.commit()
-                    logger.info(f"Updated post {post_id} status to rejected")
-                else:
-                    logger.error(f"Post {post_id} not found for status update")
-                    await update.message.reply_text("❌ Заявка не найдена")
+                if not post:
+                    logger.error(f"Post {post_id} not found")
+                    await update.message.reply_text(f"❌ Пост {post_id} не найден")
                     return
-                    
+                
+                post.status = PostStatus.REJECTED
+                await session.commit()
+                logger.info(f"✅ Post {post_id} status updated to REJECTED")
+                
         except Exception as db_error:
-            logger.error(f"Database error updating post {post_id}: {db_error}")
-            await update.message.reply_text("❌ Ошибка обновления статуса заявки")
+            logger.error(f"Database error: {db_error}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # Send notification to user
+        # Уведомляем пользователя
         try:
             await context.bot.send_message(
                 chat_id=user_id,
@@ -300,47 +354,47 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             
             await update.message.reply_text(
                 f"❌ **ЗАЯВКА ОТКЛОНЕНА**\n\n"
-                f"👤 Пользователю отправлено уведомление\n"
-                f"📝 Причина: {reason}\n"
+                f"👤 Пользователь уведомлен\n"
+                f"📝 Причина: {reason[:100]}\n"
                 f"📊 Post ID: {post_id}",
                 parse_mode='Markdown'
             )
             
-            logger.info(f"Successfully rejected post {post_id} for user {user_id}")
+            logger.info(f"✅ Successfully rejected post {post_id}")
             
         except Exception as notify_error:
-            logger.error(f"Error notifying user {user_id}: {notify_error}")
+            logger.error(f"Error notifying user: {notify_error}", exc_info=True)
             await update.message.reply_text(
                 f"⚠️ Заявка отклонена, но не удалось уведомить пользователя\n"
                 f"User ID: {user_id}\nPost ID: {post_id}"
             )
         
-        # Clear context
+        # Очищаем контекст
         context.user_data.pop('mod_post_id', None)
         context.user_data.pop('mod_post_user_id', None)
         context.user_data.pop('mod_waiting_for', None)
         
     except Exception as e:
-        logger.error(f"Error processing rejection: {e}")
-        await update.message.reply_text("❌ Ошибка обработки отклонения")
+        logger.error(f"Error processing rejection: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
 
-# Оставляем старые функции для совместимости
+# Legacy functions для совместимости
 async def approve_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Legacy function - redirects to new process"""
+    """Legacy function"""
     await start_approve_process(update, context, post_id)
 
 async def approve_post_to_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Legacy function - redirects to new process"""
+    """Legacy function"""
     await start_approve_process(update, context, post_id, chat=True)
 
 async def reject_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Legacy function - redirects to new process"""
+    """Legacy function"""
     await start_reject_process(update, context, post_id)
 
 async def publish_to_channel(bot, post):
-    """Publish post to target channel - DEPRECATED"""
+    """DEPRECATED - manual publication now used"""
     logger.warning("publish_to_channel called but manual publication is now used")
 
 async def publish_to_chat(bot, post):
-    """Publish post to target CHAT - DEPRECATED"""
+    """DEPRECATED - manual publication now used"""
     logger.warning("publish_to_chat called but manual publication is now used")
