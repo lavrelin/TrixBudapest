@@ -1,691 +1,556 @@
-# -*- coding: utf-8 -*-
-from telegram import Update, ChatPermissions
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
-from data.user_data import (
-    ban_user, unban_user, mute_user, unmute_user,
-    is_user_banned, is_user_muted, get_user_by_username,
-    get_user_by_id, get_banned_users, get_top_users,
-    update_user_activity, user_data
-)
-from services.admin_notifications import admin_notifications
-from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
 
-async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Забанить пользователя - ПОЛНАЯ БЛОКИРОВКА везде + в боте"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
+async def handle_moderation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle moderation callbacks with improved error handling"""
+    query = update.callback_query
+    
+    user_id = update.effective_user.id
+    
+    logger.info(f"Moderation callback from user {user_id}: {query.data}")
+    
+    if not Config.is_moderator(user_id):
+        await query.answer("❌ Доступ запрещен", show_alert=True)
+        logger.warning(f"Access denied for user {user_id}")
         return
-
-    # Удаляем команду из чата
-    if update.effective_chat.type in ['group', 'supergroup']:
-        try:
-            await update.message.delete()
-        except:
-            pass
-
-    # Проверяем формат команды
-    if not update.message.reply_to_message and not context.args:
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text=(
-                "📝 **Использование:**\n"
-                "• Ответьте на сообщение: `/ban причина`\n"
-                "• Или укажите: `/ban @username причина`"
-            ),
-            parse_mode='Markdown'
-        )
+    
+    # Отвечаем на callback сразу чтобы убрать "часики"
+    await query.answer()
+    
+    data = query.data.split(":")
+    action = data[1] if len(data) > 1 else None
+    post_id = int(data[2]) if len(data) > 2 and data[2].isdigit() else None
+    
+    logger.info(f"Moderation: action={action}, post_id={post_id}, moderator={user_id}")
+    
+    if not post_id:
+        logger.error(f"Missing post_id in callback: {query.data}")
+        await query.edit_message_text("❌ Ошибка: ID поста не указан")
         return
-
-    # Определяем цель
-    if update.message.reply_to_message:
-        target_user = update.message.reply_to_message.from_user
-        target_id = target_user.id
-        target_username = target_user.username or f"ID_{target_id}"
-        reason = ' '.join(context.args) if context.args else "Не указана"
+    
+    if action == "approve":
+        await start_approve_process(update, context, post_id, chat=False)
+    elif action == "approve_chat":
+        await start_approve_process(update, context, post_id, chat=True)
+    elif action == "reject":
+        await start_reject_process(update, context, post_id)
     else:
-        target = context.args[0]
-        reason = ' '.join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+        logger.error(f"Unknown moderation action: {action}")
+        await query.edit_message_text("❌ Неизвестное действие")
 
-        user_info = None
-        if target.startswith('@'):
-            user_info = get_user_by_username(target[1:])
-        elif target.isdigit():
-            user_info = get_user_by_id(int(target))
-
-        if not user_info:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text="❌ Пользователь не найден"
-            )
-            return
-
-        target_id = user_info['id']
-        target_username = user_info['username']
-
-    # Проверка на бан модератора/админа
-    if Config.is_moderator(target_id):
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text="❌ Нельзя забанить модератора или администратора"
-        )
+async def handle_moderation_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text input from moderators"""
+    user_id = update.effective_user.id
+    
+    logger.info(f"Moderation text from user {user_id}")
+    
+    if not Config.is_moderator(user_id):
+        logger.warning(f"Non-moderator {user_id} tried to send moderation text")
         return
-
-    banned_chats = []
-    failed_chats = []
-
-    # 1. Баним в BUDAPEST CHAT (основной чат)
-    try:
-        await context.bot.ban_chat_member(
-            chat_id=Config.BUDAPEST_CHAT_ID,
-            user_id=target_id
-        )
-        banned_chats.append("Будапешт чат")
-        logger.info(f"Banned {target_id} in Budapest chat")
-    except Exception as e:
-        logger.error(f"Failed to ban in Budapest chat: {e}")
-        failed_chats.append("Будапешт чат")
-
-    # 2. Баним в основном чате (CHAT_FOR_ACTUAL)
-    if Config.CHAT_FOR_ACTUAL != Config.BUDAPEST_CHAT_ID:
-        try:
-            await context.bot.ban_chat_member(
-                chat_id=Config.CHAT_FOR_ACTUAL,
-                user_id=target_id
-            )
-            banned_chats.append("Актуальное чат")
-            logger.info(f"Banned {target_id} in actual chat")
-        except Exception as e:
-            logger.error(f"Failed to ban in actual chat: {e}")
-            failed_chats.append("Актуальное чат")
-
-    # 3. Баним в группе модерации
-    try:
-        await context.bot.ban_chat_member(
-            chat_id=Config.MODERATION_GROUP_ID,
-            user_id=target_id
-        )
-        banned_chats.append("Группа модерации")
-        logger.info(f"Banned {target_id} in moderation group")
-    except Exception as e:
-        logger.error(f"Failed to ban in moderation group: {e}")
-        failed_chats.append("Группа модерации")
-
-    # 4. Пытаемся забанить в каналах (если бот админ)
-    channels_to_ban = [
-        (Config.TARGET_CHANNEL_ID, "Канал Будапешт"),
-        (Config.TRADE_CHANNEL_ID, "Торговый канал")
-    ]
     
-    for channel_id, channel_name in channels_to_ban:
-        try:
-            await context.bot.ban_chat_member(
-                chat_id=channel_id,
-                user_id=target_id
-            )
-            banned_chats.append(channel_name)
-            logger.info(f"Banned {target_id} in {channel_name}")
-        except Exception as e:
-            logger.warning(f"Could not ban in {channel_name}: {e}")
-            # Не добавляем в failed_chats, т.к. это необязательно
-
-    # 5. КРИТИЧНО: Фиксируем БАН в локальной БД (блокирует использование бота)
-    ban_user(target_id, reason)
-    logger.info(f"User {target_id} marked as banned in local database")
-
-    # 6. Уведомляем админов
-    await admin_notifications.notify_ban(
-        username=target_username,
-        user_id=target_id,
-        reason=reason,
-        moderator=update.effective_user.username or str(update.effective_user.id)
-    )
-
-    # Результат
-    result_text = (
-        f"🚫 **Пользователь ПОЛНОСТЬЮ заблокирован:**\n\n"
-        f"👤 @{target_username} (ID: {target_id})\n"
-        f"📝 Причина: {reason}\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-        f"🔒 **Блокировки:**\n"
-        f"• Бот: ✅ Заблокирован\n"
-    )
+    waiting_for = context.user_data.get('mod_waiting_for')
+    logger.info(f"Moderator {user_id} waiting_for: {waiting_for}")
     
-    if banned_chats:
-        result_text += f"• Чаты: ✅ {', '.join(banned_chats)}\n"
-    if failed_chats:
-        result_text += f"• Не удалось: ⚠️ {', '.join(failed_chats)}\n"
-
-    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-
-    await context.bot.send_message(
-        chat_id=update.effective_user.id,
-        text=result_text,
-        parse_mode='Markdown'
-    )
-    
-    # Уведомляем пользователя о бане
-    try:
-        await context.bot.send_message(
-            chat_id=target_id,
-            text=(
-                f"🚫 **Вы заблокированы**\n\n"
-                f"📝 Причина: {reason}\n"
-                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-                f"⛔️ Вы не можете:\n"
-                f"• Использовать бота\n"
-                f"• Писать в чатах Будапешт\n"
-                f"• Отправлять публикации\n\n"
-                f"📞 Для обжалования обратитесь к администрации"
-            ),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.warning(f"Could not notify user about ban: {e}")
-
-    logger.info(f"User {target_id} FULLY banned by {update.effective_user.id}")
-
-async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Разбанить пользователя ВЕЗДЕ"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "📝 **Использование:**\n"
-            "`/unban @username` или `/unban ID`",
-            parse_mode='Markdown'
-        )
-        return
-
-    target = context.args[0]
-    user_info = None
-    target_id = None
-
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-    elif target.isdigit():
-        user_info = get_user_by_id(int(target))
-
-    if not user_info:
-        await update.message.reply_text("❌ Пользователь не найден")
-        return
-
-    target_id = user_info['id']
-
-    if not is_user_banned(target_id):
-        await update.message.reply_text("ℹ️ Пользователь не забанен")
-        return
-
-    unbanned_chats = []
-    
-    # Разбаниваем везде
-    chats_to_unban = [
-        (Config.BUDAPEST_CHAT_ID, "Будапешт чат"),
-        (Config.CHAT_FOR_ACTUAL, "Актуальное чат"),
-        (Config.MODERATION_GROUP_ID, "Группа модерации"),
-        (Config.TARGET_CHANNEL_ID, "Канал Будапешт"),
-        (Config.TRADE_CHANNEL_ID, "Торговый канал")
-    ]
-    
-    for chat_id, chat_name in chats_to_unban:
-        try:
-            await context.bot.unban_chat_member(
-                chat_id=chat_id,
-                user_id=target_id,
-                only_if_banned=True
-            )
-            unbanned_chats.append(chat_name)
-            logger.info(f"Unbanned {target_id} in {chat_name}")
-        except Exception as e:
-            logger.warning(f"Could not unban in {chat_name}: {e}")
-
-    # Разбаниваем в локальной БД
-    unban_user(target_id)
-
-    # Уведомление
-    await admin_notifications.notify_unban(
-        username=user_info['username'],
-        user_id=target_id,
-        moderator=update.effective_user.username or str(update.effective_user.id)
-    )
-
-    result_text = (
-        f"✅ **Пользователь разблокирован:**\n\n"
-        f"👤 @{user_info['username']} (ID: {target_id})\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-    )
-    
-    if unbanned_chats:
-        result_text += f"🔓 Разблокирован в: {', '.join(unbanned_chats)}\n"
-    
-    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-
-    await update.message.reply_text(result_text, parse_mode='Markdown')
-    
-    # Уведомляем пользователя
-    try:
-        await context.bot.send_message(
-            chat_id=target_id,
-            text=(
-                f"✅ **Ваша блокировка снята**\n\n"
-                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-                f"🎉 Вы можете снова:\n"
-                f"• Использовать бота\n"
-                f"• Писать в чатах\n"
-                f"• Отправлять публикации\n\n"
-                f"⚠️ Соблюдайте правила сообщества!"
-            ),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.warning(f"Could not notify user about unban: {e}")
-
-    logger.info(f"User {target_id} unbanned by {update.effective_user.id}")
-
-async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Замутить пользователя - ЗАПРЕТ писать в Budapest Chat + в боте"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-
-    if update.effective_chat.type in ['group', 'supergroup']:
-        try:
-            await update.message.delete()
-        except:
-            pass
-
-    if not update.message.reply_to_message and len(context.args) < 2:
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text=(
-                "📝 **Использование:**\n"
-                "• Ответьте на сообщение: `/mute 10m`\n"
-                "• Или укажите: `/mute @username 10m`\n\n"
-                "Формат времени: 10m, 2h, 1d, 7d"
-            ),
-            parse_mode='Markdown'
-        )
-        return
-
-    if update.message.reply_to_message:
-        target_user = update.message.reply_to_message.from_user
-        target_id = target_user.id
-        target_username = target_user.username or f"ID_{target_id}"
-        time_str = context.args[0] if context.args else "10m"
+    if waiting_for == 'approve_link':
+        await process_approve_with_link(update, context)
+    elif waiting_for == 'reject_reason':
+        await process_reject_with_reason(update, context)
     else:
-        target = context.args[0]
-        time_str = context.args[1] if len(context.args) > 1 else "10m"
-        user_info = None
-        if target.startswith('@'):
-            user_info = get_user_by_username(target[1:])
-        elif target.isdigit():
-            user_info = get_user_by_id(int(target))
+        logger.info(f"Moderator {user_id} sent text but not in moderation process")
 
-        if not user_info:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text="❌ Пользователь не найден"
-            )
-            return
-
-        target_id = user_info['id']
-        target_username = user_info['username']
-
-    # Парсим длительность
+async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int, chat: bool = False):
+    """Start approval process - НЕ УДАЛЯЕТ сообщение"""
     try:
-        if time_str.endswith('m'):
-            seconds = int(time_str[:-1]) * 60
-        elif time_str.endswith('h'):
-            seconds = int(time_str[:-1]) * 3600
-        elif time_str.endswith('d'):
-            seconds = int(time_str[:-1]) * 86400
-        else:
-            raise ValueError
-    except:
-        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Неверный формат времени")
-        return
-
-    if Config.is_moderator(target_id):
-        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Нельзя замутить модератора")
-        return
-
-    mute_until = datetime.now() + timedelta(seconds=seconds)
-    muted_chats = []
-    failed_chats = []
-
-    # Мутим в Budapest Chat (ГЛАВНОЕ)
-    try:
-        await context.bot.restrict_chat_member(
-            chat_id=Config.BUDAPEST_CHAT_ID,
-            user_id=target_id,
-            permissions=ChatPermissions(can_send_messages=False),
-            until_date=mute_until
-        )
-        muted_chats.append("Будапешт чат")
-        logger.info(f"Muted {target_id} in Budapest chat")
-    except Exception as e:
-        logger.error(f"Failed to mute in Budapest chat: {e}")
-        failed_chats.append("Будапешт чат")
-
-    # Мутим в других чатах
-    try:
-        await context.bot.restrict_chat_member(
-            chat_id=Config.CHAT_FOR_ACTUAL,
-            user_id=target_id,
-            permissions=ChatPermissions(can_send_messages=False),
-            until_date=mute_until
-        )
-        muted_chats.append("Актуальное чат")
-    except Exception as e:
-        logger.error(f"Failed to mute in actual chat: {e}")
-        failed_chats.append("Актуальное чат")
-
-    # КРИТИЧНО: Мутим в локальной БД (блокирует бота)
-    mute_user(target_id, mute_until)
-
-    await admin_notifications.notify_mute(
-        username=target_username,
-        user_id=target_id,
-        duration=time_str,
-        moderator=update.effective_user.username or str(update.effective_user.id)
-    )
-
-    result_text = (
-        f"🔇 **Пользователь замучен:**\n\n"
-        f"👤 @{target_username} (ID: {target_id})\n"
-        f"⏱️ Длительность: {time_str}\n"
-        f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"🔒 **Ограничения:**\n"
-        f"• Бот: ✅ Заблокирован\n"
-    )
-    
-    if muted_chats:
-        result_text += f"• Чаты: ✅ {', '.join(muted_chats)}\n"
-    if failed_chats:
-        result_text += f"• Не удалось: ⚠️ {', '.join(failed_chats)}"
-
-    await context.bot.send_message(chat_id=update.effective_user.id, text=result_text, parse_mode='Markdown')
-    
-    # Уведомляем пользователя
-    try:
-        await context.bot.send_message(
-            chat_id=target_id,
-            text=(
-                f"🔇 **Вы получили мут**\n\n"
-                f"⏱️ Длительность: {time_str}\n"
-                f"🕐 До: {mute_until.strftime('%d.%m.%Y %H:%M')}\n"
-                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-                f"⛔️ Вы не можете:\n"
-                f"• Писать в чатах Будапешт\n"
-                f"• Использовать бота\n\n"
-                f"⚠️ Воздержитесь от нарушений правил"
-            ),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.warning(f"Could not notify user about mute: {e}")
-
-    logger.info(f"User {target_id} muted by {update.effective_user.id} for {time_str}")
-
-async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Размутить пользователя ВЕЗДЕ"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "📝 **Использование:**\n"
-            "`/unmute @username` или `/unmute ID`",
-            parse_mode='Markdown'
-        )
-        return
-
-    target = context.args[0]
-    user_info = None
-    if target.startswith('@'):
-        user_info = get_user_by_username(target[1:])
-    elif target.isdigit():
-        user_info = get_user_by_id(int(target))
-
-    if not user_info:
-        await update.message.reply_text("❌ Пользователь не найден")
-        return
-
-    target_id = user_info['id']
-
-    if not is_user_muted(target_id):
-        await update.message.reply_text("ℹ️ Пользователь не замучен")
-        return
-
-    unmuted_chats = []
-    
-    # Размучиваем везде
-    chats_to_unmute = [
-        (Config.BUDAPEST_CHAT_ID, "Будапешт чат"),
-        (Config.CHAT_FOR_ACTUAL, "Актуальное чат")
-    ]
-    
-    for chat_id, chat_name in chats_to_unmute:
-        try:
-            await context.bot.restrict_chat_member(
-                chat_id=chat_id,
-                user_id=target_id,
-                permissions=ChatPermissions(
-                    can_send_messages=True,
-                    can_send_media_messages=True,
-                    can_send_polls=True,
-                    can_send_other_messages=True,
-                    can_add_web_page_previews=True
-                )
-            )
-            unmuted_chats.append(chat_name)
-        except Exception as e:
-            logger.warning(f"Could not unmute in {chat_name}: {e}")
-
-    # Размучиваем в локальной БД
-    unmute_user(target_id)
-
-    await admin_notifications.notify_unmute(
-        username=user_info['username'],
-        user_id=target_id,
-        moderator=update.effective_user.username or str(update.effective_user.id)
-    )
-
-    result_text = (
-        f"🔊 **Пользователь размучен:**\n\n"
-        f"👤 @{user_info['username']} (ID: {target_id})\n"
-        f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-    )
-    
-    if unmuted_chats:
-        result_text += f"🔓 Размучен в: {', '.join(unmuted_chats)}\n"
-    
-    result_text += f"\n⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-
-    await update.message.reply_text(result_text, parse_mode='Markdown')
-    
-    # Уведомляем пользователя
-    try:
-        await context.bot.send_message(
-            chat_id=target_id,
-            text=(
-                f"🔊 **Ваш мут снят**\n\n"
-                f"👮 Модератор: @{update.effective_user.username or 'Неизвестно'}\n\n"
-                f"🎉 Вы можете снова писать в чатах и использовать бота\n\n"
-                f"⚠️ Соблюдайте правила сообщества!"
-            ),
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.warning(f"Could not notify user about unmute: {e}")
-
-    logger.info(f"User {target_id} unmuted by {update.effective_user.id}")
-
-async def banlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список забаненных пользователей"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-
-    banned_users = get_banned_users()
-    if not banned_users:
-        await update.message.reply_text("📋 Список забаненных пуст")
-        return
-
-    text = f"🚫 **СПИСОК ЗАБАНЕННЫХ** ({len(banned_users)}):\n\n"
-    for i, user in enumerate(banned_users, 1):
-        reason = user.get('ban_reason', 'Не указана')
-        ban_date = user.get('banned_at', datetime.now()).strftime('%d.%m.%Y')
-        text += f"{i}. @{user['username']} (ID: {user['id']})\n"
-        text += f"   📝 Причина: {reason}\n"
-        text += f"   📅 Дата: {ban_date}\n\n"
-        if len(text) > 3500:
-            await update.message.reply_text(text, parse_mode='Markdown')
-            text = ""
-
-    if text:
-        await update.message.reply_text(text, parse_mode='Markdown')
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Статистика бота (модераторы)"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-    
-    total_users = len(user_data)
-    active_24h = sum(1 for data in user_data.values() if 
-                    datetime.now() - data['last_activity'] <= timedelta(days=1))
-    active_7d = sum(1 for data in user_data.values() if 
-                   datetime.now() - data['last_activity'] <= timedelta(days=7))
-    total_messages = sum(data['message_count'] for data in user_data.values())
-    banned_count = sum(1 for data in user_data.values() if data.get('banned'))
-    muted_count = sum(1 for data in user_data.values() if 
-                     data.get('muted_until') and data['muted_until'] > datetime.now())
-    
-    text = (
-        f"📊 **СТАТИСТИКА БОТА**\n\n"
-        f"👥 **Пользователи:**\n"
-        f"• Всего: {total_users}\n"
-        f"• Активных за 24ч: {active_24h}\n"
-        f"• Активных за 7д: {active_7d}\n\n"
-        f"💬 **Сообщения:**\n"
-        f"• Всего: {total_messages}\n"
-        f"• Среднее на пользователя: {total_messages // total_users if total_users > 0 else 0}\n\n"
-        f"🔨 **Модерация:**\n"
-        f"• Забанено: {banned_count}\n"
-        f"• В муте: {muted_count}\n\n"
-        f"⏰ Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-    )
-    
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Топ активных пользователей (модераторы)"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-    
-    limit = 10
-    if context.args and context.args[0].isdigit():
-        limit = min(int(context.args[0]), 50)
-    
-    top_users = get_top_users(limit)
-    
-    if not top_users:
-        await update.message.reply_text("📊 Нет данных о пользователях")
-        return
-    
-    text = f"🏆 **ТОП-{len(top_users)} АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ**\n\n"
-    
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    
-    for i, user in enumerate(top_users, 1):
-        medal = medals.get(i, f"{i}.")
-        last_seen = user['last_activity'].strftime('%d.%m.%Y')
+        logger.info(f"Starting approve process for post {post_id}, chat={chat}")
         
-        text += (
-            f"{medal} @{user['username']}\n"
-            f"   💬 Сообщений: {user['message_count']}\n"
-            f"   📅 Последняя активность: {last_seen}\n\n"
+        from services.db import db
+        if not db.session_maker:
+            logger.error("Database not available")
+            await update.callback_query.answer("❌ База данных недоступна", show_alert=True)
+            return
+        
+        try:
+            from models import Post
+            from sqlalchemy import select
+            
+            async with db.get_session() as session:
+                result = await session.execute(
+                    select(Post).where(Post.id == post_id)
+                )
+                post = result.scalar_one_or_none()
+                
+                if not post:
+                    logger.error(f"❌ Post {post_id} not found in database")
+                    await update.callback_query.answer(
+                        "❌ Пост не найден в базе данных",
+                        show_alert=True
+                    )
+                    return
+                
+                logger.info(f"✅ Found post {post_id}, user {post.user_id}, status {post.status}")
+                
+        except Exception as db_error:
+            logger.error(f"Database error when getting post {post_id}: {db_error}", exc_info=True)
+            await update.callback_query.answer(
+                f"❌ Ошибка БД: {str(db_error)[:100]}",
+                show_alert=True
+            )
+            return
+        
+        # Сохраняем данные для следующего шага
+        context.user_data['mod_post_id'] = post_id
+        context.user_data['mod_post_user_id'] = post.user_id
+        context.user_data['mod_waiting_for'] = 'approve_link'
+        context.user_data['mod_is_chat'] = chat
+        
+        logger.info(f"✅ Stored context for approval: post={post_id}, user={post.user_id}")
+        
+        destination = "чате (будет закреплено)" if chat else "канале"
+        
+        # ИСПРАВЛЕНО: Убираем кнопки из сообщения, но НЕ удаляем его
+        try:
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            logger.info("Removed buttons from moderation message (kept message)")
+        except Exception as e:
+            logger.warning(f"Could not remove buttons: {e}")
+        
+        # Добавляем статус в сообщение группы модерации
+        try:
+            original_text = update.callback_query.message.text
+            updated_text = f"{original_text}\n\n⏳ В ОБРАБОТКЕ модератором @{update.effective_user.username or 'Unknown'}"
+            
+            await update.callback_query.edit_message_text(
+                text=updated_text
+            )
+            logger.info("Updated moderation message with processing status")
+        except Exception as e:
+            logger.warning(f"Could not update message text: {e}")
+        
+        # Инструкция для модератора
+        instruction_text = (
+            f"✅ ОДОБРЕНИЕ ЗАЯВКИ\n\n"
+            f"📊 Post ID: {post_id}\n"
+            f"👤 User ID: {post.user_id}\n"
+            f"📍 Публикация в: {destination}\n\n"
+            f"📎 Отправьте ссылку на опубликованный пост:\n"
+            f"(Например: https://t.me/snghu/1234)\n\n"
+            f"⚠️ Сначала опубликуйте пост вручную в канале/чате,\n"
+            f"затем скопируйте ссылку на него\n\n"
+            f"💡 Отправьте только ссылку одним сообщением мне в ЛС"
         )
-    
-    await update.message.reply_text(text, parse_mode='Markdown')
+        
+        # Отправляем инструкцию модератору в ЛС
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=instruction_text
+            )
+            logger.info(f"✅ Sent approval instruction to moderator {update.effective_user.id} in PM")
+        except Exception as send_error:
+            logger.error(f"❌ Could not send to moderator PM: {send_error}")
+            # Fallback: отправляем в группу модерации
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"⚠️ @{update.effective_user.username or 'Модератор'}, напишите мне в ЛС /start, чтобы получить инструкции!\n\n{instruction_text}",
+                    reply_to_message_id=update.callback_query.message.message_id
+                )
+                logger.info("Sent approval instruction to moderation group as fallback")
+            except Exception as group_error:
+                logger.error(f"Could not send to group either: {group_error}")
+                await update.callback_query.answer(
+                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
+                    show_alert=True
+                )
+        
+    except Exception as e:
+        logger.error(f"Error starting approve process: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer(
+                f"❌ Ошибка: {str(e)[:100]}",
+                show_alert=True
+            )
+        except:
+            pass
 
-async def lastseen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Когда пользователь был в последний раз (модераторы)"""
-    if not Config.is_moderator(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет прав для использования этой команды")
-        return
-    
-    if not context.args:
-        await update.message.reply_text(
-            "📝 **Использование:**\n"
-            "`/lastseen @username` или\n"
-            "`/lastseen ID`",
-            parse_mode='Markdown'
+async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Start rejection process - НЕ УДАЛЯЕТ сообщение"""
+    try:
+        logger.info(f"Starting reject process for post {post_id}")
+        
+        from services.db import db
+        if not db.session_maker:
+            logger.error("Database not available")
+            await update.callback_query.answer("❌ База данных недоступна", show_alert=True)
+            return
+        
+        try:
+            from models import Post
+            from sqlalchemy import select
+            
+            async with db.get_session() as session:
+                result = await session.execute(
+                    select(Post).where(Post.id == post_id)
+                )
+                post = result.scalar_one_or_none()
+                
+                if not post:
+                    logger.error(f"❌ Post {post_id} not found")
+                    await update.callback_query.answer(
+                        "❌ Пост не найден",
+                        show_alert=True
+                    )
+                    return
+                
+                logger.info(f"✅ Found post {post_id} for rejection")
+                
+        except Exception as db_error:
+            logger.error(f"Database error: {db_error}", exc_info=True)
+            await update.callback_query.answer(
+                f"❌ Ошибка БД",
+                show_alert=True
+            )
+            return
+        
+        # Сохраняем данные
+        context.user_data['mod_post_id'] = post_id
+        context.user_data['mod_post_user_id'] = post.user_id
+        context.user_data['mod_waiting_for'] = 'reject_reason'
+        
+        logger.info(f"✅ Stored context for rejection: post={post_id}")
+        
+        # ИСПРАВЛЕНО: Убираем кнопки, но НЕ удаляем сообщение
+        try:
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            logger.info("Removed buttons from moderation message (kept message)")
+        except Exception as e:
+            logger.warning(f"Could not remove buttons: {e}")
+        
+        # Добавляем статус в сообщение группы
+        try:
+            original_text = update.callback_query.message.text
+            updated_text = f"{original_text}\n\n⏳ ОТКЛОНЯЕТСЯ модератором @{update.effective_user.username or 'Unknown'}"
+            
+            await update.callback_query.edit_message_text(
+                text=updated_text
+            )
+            logger.info("Updated moderation message with rejection status")
+        except Exception as e:
+            logger.warning(f"Could not update message text: {e}")
+        
+        instruction_text = (
+            f"❌ ОТКЛОНЕНИЕ ЗАЯВКИ\n\n"
+            f"📊 Post ID: {post_id}\n"
+            f"👤 User ID: {post.user_id}\n\n"
+            f"📝 Напишите причину отклонения:\n"
+            f"(Будет отправлена пользователю)\n\n"
+            f"⚠️ Отправьте причину одним сообщением мне в ЛС"
         )
-        return
-    
-    target = context.args[0]
-    user_info = None
-    
-    if target.startswith('@'):
-        username = target[1:]
-        user_info = get_user_by_username(username)
-    elif target.isdigit():
-        target_id = int(target)
-        user_info = get_user_by_id(target_id)
-    
-    if not user_info:
-        await update.message.reply_text("❌ Пользователь не найден")
-        return
-    
-    last_activity = user_info['last_activity']
-    time_diff = datetime.now() - last_activity
-    
-    if time_diff.days > 0:
-        time_ago = f"{time_diff.days} дней назад"
-    elif time_diff.seconds >= 3600:
-        hours = time_diff.seconds // 3600
-        time_ago = f"{hours} часов назад"
-    elif time_diff.seconds >= 60:
-        minutes = time_diff.seconds // 60
-        time_ago = f"{minutes} минут назад"
-    else:
-        time_ago = "только что"
-    
-    status = "✅ Активен"
-    if user_info.get('banned'):
-        status = "🚫 Забанен"
-    elif user_info.get('muted_until') and user_info['muted_until'] > datetime.now():
-        status = "🔇 Замучен"
-    
-    text = (
-        f"👤 **Информация о пользователе:**\n\n"
-        f"Имя: @{user_info['username']}\n"
-        f"ID: `{user_info['id']}`\n"
-        f"Статус: {status}\n"
-        f"💬 Сообщений: {user_info['message_count']}\n"
-        f"📅 Присоединился: {user_info['join_date'].strftime('%d.%m.%Y')}\n"
-        f"⏰ Последняя активность: {last_activity.strftime('%d.%m.%Y %H:%M')}\n"
-        f"🕐 Был(а): {time_ago}"
-    )
-    
-    await update.message.reply_text(text, parse_mode='Markdown')
+        
+        # Отправляем инструкцию в ЛС модератору
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=instruction_text
+            )
+            logger.info(f"✅ Sent rejection instruction to moderator {update.effective_user.id} in PM")
+        except Exception as send_error:
+            logger.error(f"❌ Could not send to moderator PM: {send_error}")
+            # Fallback в группу
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"⚠️ @{update.effective_user.username or 'Модератор'}, напишите мне в ЛС /start!\n\n{instruction_text}",
+                    reply_to_message_id=update.callback_query.message.message_id
+                )
+                logger.info("Sent rejection instruction to moderation group as fallback")
+            except Exception as group_error:
+                logger.error(f"Could not send to group either: {group_error}")
+                await update.callback_query.answer(
+                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
+                    show_alert=True
+                )
+        
+    except Exception as e:
+        logger.error(f"Error starting reject process: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer(
+                f"❌ Ошибка: {str(e)[:100]}",
+                show_alert=True
+            )
+        except:
+            pass
 
-__all__ = [
-    'ban_command',
-    'unban_command',
-    'mute_command',
-    'unmute_command',
-    'banlist_command',
-    'stats_command',
-    'top_command',
-    'lastseen_command'
-]
+async def process_approve_with_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process approval with publication link"""
+    try:
+        link = update.message.text.strip()
+        post_id = context.user_data.get('mod_post_id')
+        user_id = context.user_data.get('mod_post_user_id')
+        is_chat = context.user_data.get('mod_is_chat', False)
+        
+        # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+        logger.info(f"=" * 50)
+        logger.info(f"APPROVE WITH LINK - START")
+        logger.info(f"Moderator: {update.effective_user.id} (@{update.effective_user.username})")
+        logger.info(f"Post ID: {post_id}")
+        logger.info(f"Target User ID: {user_id}")
+        logger.info(f"Link: {link}")
+        logger.info(f"Is Chat: {is_chat}")
+        logger.info(f"=" * 50)
+        
+        if not post_id or not user_id:
+            logger.error("Missing post_id or user_id in context")
+            await update.message.reply_text("❌ Ошибка: данные заявки не найдены")
+            return
+        
+        # Проверка ссылки
+        if not link.startswith('https://t.me/'):
+            await update.message.reply_text(
+                "❌ Неверный формат ссылки\n\n"
+                "Ссылка должна начинаться с https://t.me/"
+            )
+            return
+        
+        # Обновляем статус поста
+        try:
+            from services.db import db
+            from models import Post, PostStatus
+            from sqlalchemy import select
+            
+            async with db.get_session() as session:
+                result = await session.execute(
+                    select(Post).where(Post.id == post_id)
+                )
+                post = result.scalar_one_or_none()
+                
+                if not post:
+                    logger.error(f"Post {post_id} not found for approval")
+                    await update.message.reply_text(f"❌ Пост {post_id} не найден")
+                    return
+                
+                post.status = PostStatus.APPROVED
+                await session.commit()
+                logger.info(f"✅ Post {post_id} status updated to APPROVED")
+                
+        except Exception as db_error:
+            logger.error(f"Database error updating post: {db_error}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
+            return
+        
+        # Отправляем уведомление пользователю
+        destination_text = "чате" if is_chat else "канале"
+        
+        # ПРОВЕРЯЕМ возможность отправки пользователю
+        can_send = False
+        try:
+            chat_member = await context.bot.get_chat(user_id)
+            can_send = True
+            logger.info(f"✅ User {user_id} chat accessible: {chat_member.type}")
+        except Exception as check_error:
+            logger.warning(f"⚠️ Cannot access user {user_id} chat: {check_error}")
+            can_send = False
+        
+        # Сначала пробуем отправить с кнопками
+        user_notified = False
+        
+        if can_send:
+            success_keyboard = [
+                [InlineKeyboardButton("📺 Перейти к посту", url=link)],
+                [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
+                [InlineKeyboardButton("📚 Каталог услуг", url="https://t.me/trixvault")]
+            ]
+            
+            user_message = (
+                f"✅ Ваша заявка одобрена!\n\n"
+                f"📝 Ваш пост опубликован в {destination_text}.\n\n"
+                f"🔗 Ссылка на публикацию:\n{link}\n\n"
+                f"🔔 Подписывайтесь на наши каналы:"
+            )
+            
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=user_message,
+                reply_markup=InlineKeyboardMarkup(success_keyboard),
+                disable_web_page_preview=False
+            )
+            
+            user_notified = True
+            logger.info(f"✅ User {user_id} notified successfully about post {post_id}")
+            
+        except Exception as notify_error:
+            logger.error(f"❌ Error notifying user {user_id}: {notify_error}", exc_info=True)
+            
+            # Пробуем без кнопок (fallback)
+            try:
+                simple_message = (
+                    f"✅ Ваша заявка одобрена!\n\n"
+                    f"📝 Ваш пост опубликован в {destination_text}.\n\n"
+                    f"🔗 Ссылка:\n{link}\n\n"
+                    f"📢 Подписывайтесь:\n"
+                    f"• Канал: https://t.me/snghu\n"
+                    f"• Каталог: https://t.me/trixvault"
+                )
+                
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=simple_message
+                )
+                
+                user_notified = True
+                logger.info(f"✅ User {user_id} notified (fallback without buttons)")
+                
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback also failed for user {user_id}: {fallback_error}", exc_info=True)
+        
+        # Подтверждение модератору
+        try:
+            if user_notified:
+                mod_message = (
+                    f"✅ ЗАЯВКА ОДОБРЕНА\n\n"
+                    f"👤 Пользователь ID: {user_id}\n"
+                    f"✉️ Уведомление: ОТПРАВЛЕНО\n"
+                    f"🔗 Ссылка: {link}\n"
+                    f"📊 Post ID: {post_id}"
+                )
+            else:
+                mod_message = (
+                    f"⚠️ ЗАЯВКА ОДОБРЕНА, НО...\n\n"
+                    f"👤 Пользователь ID: {user_id}\n"
+                    f"❌ Уведомление: НЕ ДОСТАВЛЕНО\n"
+                    f"🔗 Ссылка: {link}\n"
+                    f"📊 Post ID: {post_id}\n\n"
+                    f"💡 Возможные причины:\n"
+                    f"• Пользователь заблокировал бота\n"
+                    f"• Пользователь удалил аккаунт\n"
+                    f"• Пользователь не писал боту /start\n\n"
+                    f"⚠️ Свяжитесь с пользователем напрямую!"
+                )
+            
+            await update.message.reply_text(mod_message)
+            
+        except Exception as mod_error:
+            logger.error(f"Error sending confirmation to moderator: {mod_error}")
+        
+        logger.info(f"✅ Approval process completed for post {post_id}, user_notified={user_notified}")
+        
+        # Очищаем контекст
+        context.user_data.pop('mod_post_id', None)
+        context.user_data.pop('mod_post_user_id', None)
+        context.user_data.pop('mod_waiting_for', None)
+        context.user_data.pop('mod_is_chat', None)
+        
+    except Exception as e:
+        logger.error(f"Error processing approval: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
+
+async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process rejection with reason"""
+    try:
+        reason = update.message.text.strip()
+        post_id = context.user_data.get('mod_post_id')
+        user_id = context.user_data.get('mod_post_user_id')
+        
+        logger.info(f"Processing rejection: post={post_id}, user={user_id}")
+        
+        if not post_id or not user_id:
+            logger.error("Missing data in context")
+            await update.message.reply_text("❌ Ошибка: данные не найдены")
+            return
+        
+        if not reason or len(reason) < 5:
+            await update.message.reply_text("❌ Причина слишком короткая (минимум 5 символов)")
+            return
+        
+        # Обновляем статус
+        try:
+            from services.db import db
+            from models import Post, PostStatus
+            from sqlalchemy import select
+            
+            async with db.get_session() as session:
+                result = await session.execute(
+                    select(Post).where(Post.id == post_id)
+                )
+                post = result.scalar_one_or_none()
+                
+                if not post:
+                    logger.error(f"Post {post_id} not found")
+                    await update.message.reply_text(f"❌ Пост {post_id} не найден")
+                    return
+                
+                post.status = PostStatus.REJECTED
+                await session.commit()
+                logger.info(f"✅ Post {post_id} status updated to REJECTED")
+                
+        except Exception as db_error:
+            logger.error(f"Database error: {db_error}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
+            return
+        
+        # Уведомляем пользователя БЕЗ Markdown
+        try:
+            user_message = (
+                f"❌ Ваша заявка отклонена\n\n"
+                f"📝 Причина:\n{reason}\n\n"
+                f"💡 Вы можете создать новую заявку, учтя указанные замечания.\n\n"
+                f"Используйте /start для возврата в главное меню."
+            )
+            
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=user_message
+            )
+            
+            # Подтверждение модератору
+            mod_confirmation = (
+                f"❌ ЗАЯВКА ОТКЛОНЕНА\n\n"
+                f"👤 Пользователь уведомлен\n"
+                f"📝 Причина: {reason[:100]}\n"
+                f"📊 Post ID: {post_id}"
+            )
+            
+            await update.message.reply_text(mod_confirmation)
+            
+            logger.info(f"✅ Successfully rejected post {post_id} and notified user {user_id}")
+            
+        except Exception as notify_error:
+            logger.error(f"Error notifying user: {notify_error}", exc_info=True)
+            await update.message.reply_text(
+                f"⚠️ Заявка отклонена, но не удалось уведомить пользователя\n"
+                f"User ID: {user_id}\nPost ID: {post_id}"
+            )
+        
+        # Очищаем контекст
+        context.user_data.pop('mod_post_id', None)
+        context.user_data.pop('mod_post_user_id', None)
+        context.user_data.pop('mod_waiting_for', None)
+        
+    except Exception as e:
+        logger.error(f"Error processing rejection: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
+
+# Legacy functions для совместимости
+async def approve_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Legacy function"""
+    await start_approve_process(update, context, post_id)
+
+async def approve_post_to_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Legacy function"""
+    await start_approve_process(update, context, post_id, chat=True)
+
+async def reject_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
+    """Legacy function"""
+    await start_reject_process(update, context, post_id)
+
+async def publish_to_channel(bot, post):
+    """DEPRECATED - manual publication now used"""
+    logger.warning("publish_to_channel called but manual publication is now used")
+
+async def publish_to_chat(bot, post):
+    """DEPRECATED - manual publication now used"""
+    logger.warning("publish_to_chat called but manual publication is now used")
