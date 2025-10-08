@@ -359,7 +359,7 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
 
 async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process rejection with reason - ИСПРАВЛЕНО"""
+    """Process rejection with reason - ИСПРАВЛЕНО: убран Markdown"""
     try:
         reason = update.message.text.strip()
         post_id = context.user_data.get('mod_post_id')
@@ -402,25 +402,32 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # Уведомляем пользователя
+        # ИСПРАВЛЕНО: Уведомляем пользователя БЕЗ Markdown
         try:
+            user_message = (
+                f"❌ Ваша заявка отклонена\n\n"
+                f"📝 Причина:\n{reason}\n\n"
+                f"💡 Вы можете создать новую заявку, учтя указанные замечания.\n\n"
+                f"Используйте /start для возврата в главное меню."
+            )
+            
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"❌ **Ваша заявка отклонена**\n\n"
-                     f"📝 **Причина:**\n{reason}\n\n"
-                     f"💡 Вы можете создать новую заявку, учтя указанные замечания.",
-                parse_mode='Markdown'
+                text=user_message
+                # УБРАН parse_mode='Markdown'
             )
             
-            await update.message.reply_text(
-                f"❌ **ЗАЯВКА ОТКЛОНЕНА**\n\n"
+            # Подтверждение модератору тоже БЕЗ Markdown
+            mod_confirmation = (
+                f"❌ ЗАЯВКА ОТКЛОНЕНА\n\n"
                 f"👤 Пользователь уведомлен\n"
                 f"📝 Причина: {reason[:100]}\n"
-                f"📊 Post ID: {post_id}",
-                parse_mode='Markdown'
+                f"📊 Post ID: {post_id}"
             )
             
-            logger.info(f"✅ Successfully rejected post {post_id}")
+            await update.message.reply_text(mod_confirmation)
+            
+            logger.info(f"✅ Successfully rejected post {post_id} and notified user {user_id}")
             
         except Exception as notify_error:
             logger.error(f"Error notifying user: {notify_error}", exc_info=True)
