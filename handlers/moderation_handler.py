@@ -293,7 +293,15 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         user_id = context.user_data.get('mod_post_user_id')
         is_chat = context.user_data.get('mod_is_chat', False)
         
-        logger.info(f"Processing approval: post={post_id}, user={user_id}, link={link}")
+        # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+        logger.info(f"=" * 50)
+        logger.info(f"APPROVE WITH LINK - START")
+        logger.info(f"Moderator: {update.effective_user.id} (@{update.effective_user.username})")
+        logger.info(f"Post ID: {post_id}")
+        logger.info(f"Target User ID: {user_id}")
+        logger.info(f"Link: {link}")
+        logger.info(f"Is Chat: {is_chat}")
+        logger.info(f"=" * 50)
         
         if not post_id or not user_id:
             logger.error("Missing post_id or user_id in context")
@@ -335,38 +343,100 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             return
         
         # Отправляем уведомление пользователю
+        destination_text = "чате" if is_chat else "канале"
+        
+        # ПРОВЕРЯЕМ возможность отправки пользователю
+        can_send = False
         try:
-            destination_text = "чате" if is_chat else "канале"
+            chat_member = await context.bot.get_chat(user_id)
+            can_send = True
+            logger.info(f"✅ User {user_id} chat accessible: {chat_member.type}")
+        except Exception as check_error:
+            logger.warning(f"⚠️ Cannot access user {user_id} chat: {check_error}")
+            can_send = False
+        
+        # Сначала пробуем отправить с кнопками
+        user_notified = False
+        
+        if can_send:
             success_keyboard = [
                 [InlineKeyboardButton("📺 Перейти к посту", url=link)],
                 [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
                 [InlineKeyboardButton("📚 Каталог услуг", url="https://t.me/trixvault")]
             ]
             
+            user_message = (
+                f"✅ Ваша заявка одобрена!\n\n"
+                f"📝 Ваш пост опубликован в {destination_text}.\n\n"
+                f"🔗 Ссылка на публикацию:\n{link}\n\n"
+                f"🔔 Подписывайтесь на наши каналы:"
+            )
+            
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"✅ Ваша заявка одобрена!\n\n"
-                     f"📝 Ваш пост опубликован в {destination_text}.\n\n"
-                     f"🔗 Ссылка:\n{link}\n\n"
-                     f"🔔 Подписывайтесь на наши каналы:",
-                reply_markup=InlineKeyboardMarkup(success_keyboard)
+                text=user_message,
+                reply_markup=InlineKeyboardMarkup(success_keyboard),
+                disable_web_page_preview=False
             )
             
-            await update.message.reply_text(
-                f"✅ ЗАЯВКА ОДОБРЕНА\n\n"
-                f"👤 Пользователь уведомлен\n"
-                f"🔗 Ссылка: {link}\n"
-                f"📊 Post ID: {post_id}"
-            )
-            
-            logger.info(f"✅ Successfully approved post {post_id}")
+            user_notified = True
+            logger.info(f"✅ User {user_id} notified successfully about post {post_id}")
             
         except Exception as notify_error:
-            logger.error(f"Error notifying user: {notify_error}", exc_info=True)
-            await update.message.reply_text(
-                f"⚠️ Заявка одобрена, но не удалось уведомить пользователя\n"
-                f"User ID: {user_id}\nPost ID: {post_id}"
-            )
+            logger.error(f"❌ Error notifying user {user_id}: {notify_error}", exc_info=True)
+            
+            # Пробуем без кнопок (fallback)
+            try:
+                simple_message = (
+                    f"✅ Ваша заявка одобрена!\n\n"
+                    f"📝 Ваш пост опубликован в {destination_text}.\n\n"
+                    f"🔗 Ссылка:\n{link}\n\n"
+                    f"📢 Подписывайтесь:\n"
+                    f"• Канал: https://t.me/snghu\n"
+                    f"• Каталог: https://t.me/trixvault"
+                )
+                
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=simple_message
+                )
+                
+                user_notified = True
+                logger.info(f"✅ User {user_id} notified (fallback without buttons)")
+                
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback also failed for user {user_id}: {fallback_error}", exc_info=True)
+        
+        # Подтверждение модератору
+        try:
+            if user_notified:
+                mod_message = (
+                    f"✅ ЗАЯВКА ОДОБРЕНА\n\n"
+                    f"👤 Пользователь ID: {user_id}\n"
+                    f"✉️ Уведомление: ОТПРАВЛЕНО\n"
+                    f"🔗 Ссылка: {link}\n"
+                    f"📊 Post ID: {post_id}"
+                )
+            else:
+                mod_message = (
+                    f"⚠️ ЗАЯВКА ОДОБРЕНА, НО...\n\n"
+                    f"👤 Пользователь ID: {user_id}\n"
+                    f"❌ Уведомление: НЕ ДОСТАВЛЕНО\n"
+                    f"🔗 Ссылка: {link}\n"
+                    f"📊 Post ID: {post_id}\n\n"
+                    f"💡 Возможные причины:\n"
+                    f"• Пользователь заблокировал бота\n"
+                    f"• Пользователь удалил аккаунт\n"
+                    f"• Пользователь не писал боту /start\n\n"
+                    f"⚠️ Свяжитесь с пользователем напрямую!"
+                )
+            
+            await update.message.reply_text(mod_message)
+            
+        except Exception as mod_error:
+            logger.error(f"Error sending confirmation to moderator: {mod_error}")
+        
+        logger.info(f"✅ Approval process completed for post {post_id}, user_notified={user_notified}")
         
         # Очищаем контекст
         context.user_data.pop('mod_post_id', None)
