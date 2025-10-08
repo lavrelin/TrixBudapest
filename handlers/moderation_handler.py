@@ -63,11 +63,10 @@ async def handle_moderation_text(update: Update, context: ContextTypes.DEFAULT_T
         logger.info(f"Moderator {user_id} sent text but not in moderation process")
 
 async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int, chat: bool = False):
-    """Start approval process - ИСПРАВЛЕНО: теперь отправляет сообщение модератору"""
+    """Start approval process - НЕ УДАЛЯЕТ сообщение"""
     try:
         logger.info(f"Starting approve process for post {post_id}, chat={chat}")
         
-        # Проверяем доступность БД
         from services.db import db
         if not db.session_maker:
             logger.error("Database not available")
@@ -112,47 +111,59 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
         
         destination = "чате (будет закреплено)" if chat else "канале"
         
-        # ИСПРАВЛЕНО: Отправляем НОВОЕ сообщение вместо редактирования
+        # ИСПРАВЛЕНО: Убираем кнопки из сообщения, но НЕ удаляем его
+        try:
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            logger.info("Removed buttons from moderation message (kept message)")
+        except Exception as e:
+            logger.warning(f"Could not remove buttons: {e}")
+        
+        # Добавляем статус в сообщение группы модерации
+        try:
+            original_text = update.callback_query.message.text
+            updated_text = f"{original_text}\n\n⏳ В ОБРАБОТКЕ модератором @{update.effective_user.username or 'Unknown'}"
+            
+            await update.callback_query.edit_message_text(
+                text=updated_text
+            )
+            logger.info("Updated moderation message with processing status")
+        except Exception as e:
+            logger.warning(f"Could not update message text: {e}")
+        
+        # Инструкция для модератора
         instruction_text = (
-            f"✅ **ОДОБРЕНИЕ ЗАЯВКИ**\n\n"
-            f"📊 Post ID: `{post_id}`\n"
-            f"👤 User ID: `{post.user_id}`\n"
+            f"✅ ОДОБРЕНИЕ ЗАЯВКИ\n\n"
+            f"📊 Post ID: {post_id}\n"
+            f"👤 User ID: {post.user_id}\n"
             f"📍 Публикация в: {destination}\n\n"
-            f"📎 **Отправьте ссылку на опубликованный пост:**\n"
+            f"📎 Отправьте ссылку на опубликованный пост:\n"
             f"(Например: https://t.me/snghu/1234)\n\n"
-            f"⚠️ Сначала опубликуйте пост вручную, затем скопируйте ссылку\n\n"
-            f"💡 Отправьте только ссылку одним сообщением"
+            f"⚠️ Сначала опубликуйте пост вручную в канале/чате,\n"
+            f"затем скопируйте ссылку на него\n\n"
+            f"💡 Отправьте только ссылку одним сообщением мне в ЛС"
         )
         
-        try:
-            # Удаляем старое сообщение с кнопками
-            await update.callback_query.delete_message()
-            logger.info("Deleted old moderation message")
-        except Exception as e:
-            logger.warning(f"Could not delete old message: {e}")
-        
-        # Отправляем новое сообщение модератору
+        # Отправляем инструкцию модератору в ЛС
         try:
             await context.bot.send_message(
-                chat_id=update.effective_user.id,  # Отправляем модератору в ЛС
-                text=instruction_text,
-                parse_mode='Markdown'
+                chat_id=update.effective_user.id,
+                text=instruction_text
             )
-            logger.info(f"Sent approval instruction to moderator {update.effective_user.id}")
+            logger.info(f"✅ Sent approval instruction to moderator {update.effective_user.id} in PM")
         except Exception as send_error:
-            logger.error(f"Could not send to moderator PM: {send_error}")
-            # Fallback: отправляем в группу если не удалось в ЛС
+            logger.error(f"❌ Could not send to moderator PM: {send_error}")
+            # Fallback: отправляем в группу модерации
             try:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text=instruction_text,
-                    parse_mode='Markdown'
+                    text=f"⚠️ @{update.effective_user.username or 'Модератор'}, напишите мне в ЛС /start, чтобы получить инструкции!\n\n{instruction_text}",
+                    reply_to_message_id=update.callback_query.message.message_id
                 )
-                logger.info("Sent approval instruction to moderation group")
+                logger.info("Sent approval instruction to moderation group as fallback")
             except Exception as group_error:
                 logger.error(f"Could not send to group either: {group_error}")
                 await update.callback_query.answer(
-                    "❌ Не удалось отправить инструкции",
+                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
                     show_alert=True
                 )
         
@@ -167,7 +178,7 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
 async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Start rejection process - ИСПРАВЛЕНО: отправляет новое сообщение"""
+    """Start rejection process - НЕ УДАЛЯЕТ сообщение"""
     try:
         logger.info(f"Starting reject process for post {post_id}")
         
@@ -212,44 +223,55 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
         
         logger.info(f"✅ Stored context for rejection: post={post_id}")
         
+        # ИСПРАВЛЕНО: Убираем кнопки, но НЕ удаляем сообщение
+        try:
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            logger.info("Removed buttons from moderation message (kept message)")
+        except Exception as e:
+            logger.warning(f"Could not remove buttons: {e}")
+        
+        # Добавляем статус в сообщение группы
+        try:
+            original_text = update.callback_query.message.text
+            updated_text = f"{original_text}\n\n⏳ ОТКЛОНЯЕТСЯ модератором @{update.effective_user.username or 'Unknown'}"
+            
+            await update.callback_query.edit_message_text(
+                text=updated_text
+            )
+            logger.info("Updated moderation message with rejection status")
+        except Exception as e:
+            logger.warning(f"Could not update message text: {e}")
+        
         instruction_text = (
-            f"❌ **ОТКЛОНЕНИЕ ЗАЯВКИ**\n\n"
-            f"📊 Post ID: `{post_id}`\n"
-            f"👤 User ID: `{post.user_id}`\n\n"
-            f"📝 **Напишите причину отклонения:**\n"
+            f"❌ ОТКЛОНЕНИЕ ЗАЯВКИ\n\n"
+            f"📊 Post ID: {post_id}\n"
+            f"👤 User ID: {post.user_id}\n\n"
+            f"📝 Напишите причину отклонения:\n"
             f"(Будет отправлена пользователю)\n\n"
-            f"⚠️ Отправьте причину одним сообщением"
+            f"⚠️ Отправьте причину одним сообщением мне в ЛС"
         )
         
-        try:
-            # Удаляем старое сообщение
-            await update.callback_query.delete_message()
-            logger.info("Deleted old moderation message")
-        except Exception as e:
-            logger.warning(f"Could not delete old message: {e}")
-        
-        # Отправляем новое сообщение
+        # Отправляем инструкцию в ЛС модератору
         try:
             await context.bot.send_message(
-                chat_id=update.effective_user.id,  # В ЛС модератору
-                text=instruction_text,
-                parse_mode='Markdown'
+                chat_id=update.effective_user.id,
+                text=instruction_text
             )
-            logger.info(f"Sent rejection instruction to moderator {update.effective_user.id}")
+            logger.info(f"✅ Sent rejection instruction to moderator {update.effective_user.id} in PM")
         except Exception as send_error:
-            logger.error(f"Could not send to moderator PM: {send_error}")
+            logger.error(f"❌ Could not send to moderator PM: {send_error}")
             # Fallback в группу
             try:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text=instruction_text,
-                    parse_mode='Markdown'
+                    text=f"⚠️ @{update.effective_user.username or 'Модератор'}, напишите мне в ЛС /start!\n\n{instruction_text}",
+                    reply_to_message_id=update.callback_query.message.message_id
                 )
-                logger.info("Sent rejection instruction to moderation group")
+                logger.info("Sent rejection instruction to moderation group as fallback")
             except Exception as group_error:
                 logger.error(f"Could not send to group either: {group_error}")
                 await update.callback_query.answer(
-                    "❌ Не удалось отправить инструкции",
+                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
                     show_alert=True
                 )
         
@@ -264,7 +286,7 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 async def process_approve_with_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process approval with publication link - ИСПРАВЛЕНО"""
+    """Process approval with publication link"""
     try:
         link = update.message.text.strip()
         post_id = context.user_data.get('mod_post_id')
@@ -323,20 +345,18 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"✅ **Ваша заявка одобрена!**\n\n"
+                text=f"✅ Ваша заявка одобрена!\n\n"
                      f"📝 Ваш пост опубликован в {destination_text}.\n\n"
-                     f"🔗 **Ссылка:**\n{link}\n\n"
-                     f"🔔 *Подписывайтесь на наши каналы:*",
-                reply_markup=InlineKeyboardMarkup(success_keyboard),
-                parse_mode='Markdown'
+                     f"🔗 Ссылка:\n{link}\n\n"
+                     f"🔔 Подписывайтесь на наши каналы:",
+                reply_markup=InlineKeyboardMarkup(success_keyboard)
             )
             
             await update.message.reply_text(
-                f"✅ **ЗАЯВКА ОДОБРЕНА**\n\n"
+                f"✅ ЗАЯВКА ОДОБРЕНА\n\n"
                 f"👤 Пользователь уведомлен\n"
                 f"🔗 Ссылка: {link}\n"
-                f"📊 Post ID: {post_id}",
-                parse_mode='Markdown'
+                f"📊 Post ID: {post_id}"
             )
             
             logger.info(f"✅ Successfully approved post {post_id}")
@@ -359,7 +379,7 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
 
 async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process rejection with reason - ИСПРАВЛЕНО: убран Markdown"""
+    """Process rejection with reason"""
     try:
         reason = update.message.text.strip()
         post_id = context.user_data.get('mod_post_id')
@@ -402,7 +422,7 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # ИСПРАВЛЕНО: Уведомляем пользователя БЕЗ Markdown
+        # Уведомляем пользователя БЕЗ Markdown
         try:
             user_message = (
                 f"❌ Ваша заявка отклонена\n\n"
@@ -414,10 +434,9 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             await context.bot.send_message(
                 chat_id=user_id,
                 text=user_message
-                # УБРАН parse_mode='Markdown'
             )
             
-            # Подтверждение модератору тоже БЕЗ Markdown
+            # Подтверждение модератору
             mod_confirmation = (
                 f"❌ ЗАЯВКА ОТКЛОНЕНА\n\n"
                 f"👤 Пользователь уведомлен\n"
@@ -444,6 +463,7 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
     except Exception as e:
         logger.error(f"Error processing rejection: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
+
 # Legacy functions для совместимости
 async def approve_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
     """Legacy function"""
