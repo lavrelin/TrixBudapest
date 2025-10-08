@@ -444,7 +444,6 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
     except Exception as e:
         logger.error(f"Error processing rejection: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
-
 # Legacy functions для совместимости
 async def approve_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
     """Legacy function"""
