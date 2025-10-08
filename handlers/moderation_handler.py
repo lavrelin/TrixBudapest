@@ -63,7 +63,7 @@ async def handle_moderation_text(update: Update, context: ContextTypes.DEFAULT_T
         logger.info(f"Moderator {user_id} sent text but not in moderation process")
 
 async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int, chat: bool = False):
-    """Start approval process - ИСПРАВЛЕНО: улучшенная обработка ошибок"""
+    """Start approval process - ИСПРАВЛЕНО: теперь отправляет сообщение модератору"""
     try:
         logger.info(f"Starting approve process for post {post_id}, chat={chat}")
         
@@ -71,9 +71,7 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
         from services.db import db
         if not db.session_maker:
             logger.error("Database not available")
-            await update.callback_query.edit_message_text(
-                "❌ База данных недоступна\nПопробуйте позже"
-            )
+            await update.callback_query.answer("❌ База данных недоступна", show_alert=True)
             return
         
         try:
@@ -88,14 +86,9 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 if not post:
                     logger.error(f"❌ Post {post_id} not found in database")
-                    await update.callback_query.edit_message_text(
-                        f"❌ **Пост не найден**\n\n"
-                        f"Post ID: {post_id}\n\n"
-                        f"Возможные причины:\n"
-                        f"• Пост был удален\n"
-                        f"• Неверный ID\n"
-                        f"• Ошибка базы данных\n\n"
-                        f"Обратитесь к администратору."
+                    await update.callback_query.answer(
+                        "❌ Пост не найден в базе данных",
+                        show_alert=True
                     )
                     return
                 
@@ -103,11 +96,9 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
                 
         except Exception as db_error:
             logger.error(f"Database error when getting post {post_id}: {db_error}", exc_info=True)
-            await update.callback_query.edit_message_text(
-                f"❌ **Ошибка базы данных**\n\n"
-                f"Post ID: {post_id}\n"
-                f"Ошибка: {str(db_error)[:100]}\n\n"
-                f"Попробуйте позже или обратитесь к администратору."
+            await update.callback_query.answer(
+                f"❌ Ошибка БД: {str(db_error)[:100]}",
+                show_alert=True
             )
             return
         
@@ -121,7 +112,8 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
         
         destination = "чате (будет закреплено)" if chat else "канале"
         
-        await update.callback_query.edit_message_text(
+        # ИСПРАВЛЕНО: Отправляем НОВОЕ сообщение вместо редактирования
+        instruction_text = (
             f"✅ **ОДОБРЕНИЕ ЗАЯВКИ**\n\n"
             f"📊 Post ID: `{post_id}`\n"
             f"👤 User ID: `{post.user_id}`\n"
@@ -129,28 +121,60 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
             f"📎 **Отправьте ссылку на опубликованный пост:**\n"
             f"(Например: https://t.me/snghu/1234)\n\n"
             f"⚠️ Сначала опубликуйте пост вручную, затем скопируйте ссылку\n\n"
-            f"💡 Отправьте только ссылку одним сообщением",
-            parse_mode='Markdown'
+            f"💡 Отправьте только ссылку одним сообщением"
         )
+        
+        try:
+            # Удаляем старое сообщение с кнопками
+            await update.callback_query.delete_message()
+            logger.info("Deleted old moderation message")
+        except Exception as e:
+            logger.warning(f"Could not delete old message: {e}")
+        
+        # Отправляем новое сообщение модератору
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,  # Отправляем модератору в ЛС
+                text=instruction_text,
+                parse_mode='Markdown'
+            )
+            logger.info(f"Sent approval instruction to moderator {update.effective_user.id}")
+        except Exception as send_error:
+            logger.error(f"Could not send to moderator PM: {send_error}")
+            # Fallback: отправляем в группу если не удалось в ЛС
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=instruction_text,
+                    parse_mode='Markdown'
+                )
+                logger.info("Sent approval instruction to moderation group")
+            except Exception as group_error:
+                logger.error(f"Could not send to group either: {group_error}")
+                await update.callback_query.answer(
+                    "❌ Не удалось отправить инструкции",
+                    show_alert=True
+                )
         
     except Exception as e:
         logger.error(f"Error starting approve process: {e}", exc_info=True)
         try:
-            await update.callback_query.edit_message_text(
-                f"❌ Ошибка обработки: {str(e)[:200]}"
+            await update.callback_query.answer(
+                f"❌ Ошибка: {str(e)[:100]}",
+                show_alert=True
             )
         except:
             pass
 
 async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Start rejection process - ИСПРАВЛЕНО"""
+    """Start rejection process - ИСПРАВЛЕНО: отправляет новое сообщение"""
     try:
         logger.info(f"Starting reject process for post {post_id}")
         
         from services.db import db
         if not db.session_maker:
             logger.error("Database not available")
-            await update.callback_query.edit_message_text("❌ База данных недоступна")
+            await update.callback_query.answer("❌ База данных недоступна", show_alert=True)
             return
         
         try:
@@ -165,8 +189,9 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 
                 if not post:
                     logger.error(f"❌ Post {post_id} not found")
-                    await update.callback_query.edit_message_text(
-                        f"❌ Пост {post_id} не найден"
+                    await update.callback_query.answer(
+                        "❌ Пост не найден",
+                        show_alert=True
                     )
                     return
                 
@@ -174,8 +199,9 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 
         except Exception as db_error:
             logger.error(f"Database error: {db_error}", exc_info=True)
-            await update.callback_query.edit_message_text(
-                f"❌ Ошибка БД: {str(db_error)[:100]}"
+            await update.callback_query.answer(
+                f"❌ Ошибка БД",
+                show_alert=True
             )
             return
         
@@ -186,20 +212,54 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
         
         logger.info(f"✅ Stored context for rejection: post={post_id}")
         
-        await update.callback_query.edit_message_text(
+        instruction_text = (
             f"❌ **ОТКЛОНЕНИЕ ЗАЯВКИ**\n\n"
             f"📊 Post ID: `{post_id}`\n"
             f"👤 User ID: `{post.user_id}`\n\n"
             f"📝 **Напишите причину отклонения:**\n"
             f"(Будет отправлена пользователю)\n\n"
-            f"⚠️ Отправьте причину одним сообщением",
-            parse_mode='Markdown'
+            f"⚠️ Отправьте причину одним сообщением"
         )
+        
+        try:
+            # Удаляем старое сообщение
+            await update.callback_query.delete_message()
+            logger.info("Deleted old moderation message")
+        except Exception as e:
+            logger.warning(f"Could not delete old message: {e}")
+        
+        # Отправляем новое сообщение
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,  # В ЛС модератору
+                text=instruction_text,
+                parse_mode='Markdown'
+            )
+            logger.info(f"Sent rejection instruction to moderator {update.effective_user.id}")
+        except Exception as send_error:
+            logger.error(f"Could not send to moderator PM: {send_error}")
+            # Fallback в группу
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=instruction_text,
+                    parse_mode='Markdown'
+                )
+                logger.info("Sent rejection instruction to moderation group")
+            except Exception as group_error:
+                logger.error(f"Could not send to group either: {group_error}")
+                await update.callback_query.answer(
+                    "❌ Не удалось отправить инструкции",
+                    show_alert=True
+                )
         
     except Exception as e:
         logger.error(f"Error starting reject process: {e}", exc_info=True)
         try:
-            await update.callback_query.edit_message_text(f"❌ Ошибка: {str(e)[:200]}")
+            await update.callback_query.answer(
+                f"❌ Ошибка: {str(e)[:100]}",
+                show_alert=True
+            )
         except:
             pass
 
