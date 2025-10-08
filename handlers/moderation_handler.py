@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import Config
@@ -8,7 +9,6 @@ logger = logging.getLogger(__name__)
 async def handle_moderation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle moderation callbacks with improved error handling"""
     query = update.callback_query
-    
     user_id = update.effective_user.id
     
     logger.info(f"Moderation callback from user {user_id}: {query.data}")
@@ -18,7 +18,6 @@ async def handle_moderation_callback(update: Update, context: ContextTypes.DEFAU
         logger.warning(f"Access denied for user {user_id}")
         return
     
-    # Отвечаем на callback сразу чтобы убрать "часики"
     await query.answer()
     
     data = query.data.split(":")
@@ -85,23 +84,16 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 if not post:
                     logger.error(f"❌ Post {post_id} not found in database")
-                    await update.callback_query.answer(
-                        "❌ Пост не найден в базе данных",
-                        show_alert=True
-                    )
+                    await update.callback_query.answer("❌ Пост не найден в базе данных", show_alert=True)
                     return
                 
                 logger.info(f"✅ Found post {post_id}, user {post.user_id}, status {post.status}")
                 
         except Exception as db_error:
             logger.error(f"Database error when getting post {post_id}: {db_error}", exc_info=True)
-            await update.callback_query.answer(
-                f"❌ Ошибка БД: {str(db_error)[:100]}",
-                show_alert=True
-            )
+            await update.callback_query.answer(f"❌ Ошибка БД: {str(db_error)[:100]}", show_alert=True)
             return
         
-        # Сохраняем данные для следующего шага
         context.user_data['mod_post_id'] = post_id
         context.user_data['mod_post_user_id'] = post.user_id
         context.user_data['mod_waiting_for'] = 'approve_link'
@@ -111,26 +103,21 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
         
         destination = "чате (будет закреплено)" if chat else "канале"
         
-        # ИСПРАВЛЕНО: Убираем кнопки из сообщения, но НЕ удаляем его
         try:
             await update.callback_query.edit_message_reply_markup(reply_markup=None)
             logger.info("Removed buttons from moderation message (kept message)")
         except Exception as e:
             logger.warning(f"Could not remove buttons: {e}")
         
-        # Добавляем статус в сообщение группы модерации
         try:
             original_text = update.callback_query.message.text
             updated_text = f"{original_text}\n\n⏳ В ОБРАБОТКЕ модератором @{update.effective_user.username or 'Unknown'}"
             
-            await update.callback_query.edit_message_text(
-                text=updated_text
-            )
+            await update.callback_query.edit_message_text(text=updated_text)
             logger.info("Updated moderation message with processing status")
         except Exception as e:
             logger.warning(f"Could not update message text: {e}")
         
-        # Инструкция для модератора
         instruction_text = (
             f"✅ ОДОБРЕНИЕ ЗАЯВКИ\n\n"
             f"📊 Post ID: {post_id}\n"
@@ -143,7 +130,6 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
             f"💡 Отправьте только ссылку одним сообщением мне в ЛС"
         )
         
-        # Отправляем инструкцию модератору в ЛС
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
@@ -152,7 +138,6 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
             logger.info(f"✅ Sent approval instruction to moderator {update.effective_user.id} in PM")
         except Exception as send_error:
             logger.error(f"❌ Could not send to moderator PM: {send_error}")
-            # Fallback: отправляем в группу модерации
             try:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
@@ -162,18 +147,12 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
                 logger.info("Sent approval instruction to moderation group as fallback")
             except Exception as group_error:
                 logger.error(f"Could not send to group either: {group_error}")
-                await update.callback_query.answer(
-                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
-                    show_alert=True
-                )
+                await update.callback_query.answer("❌ Не удалось отправить инструкции. Напишите боту /start в ЛС", show_alert=True)
         
     except Exception as e:
         logger.error(f"Error starting approve process: {e}", exc_info=True)
         try:
-            await update.callback_query.answer(
-                f"❌ Ошибка: {str(e)[:100]}",
-                show_alert=True
-            )
+            await update.callback_query.answer(f"❌ Ошибка: {str(e)[:100]}", show_alert=True)
         except:
             pass
 
@@ -200,44 +179,33 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 
                 if not post:
                     logger.error(f"❌ Post {post_id} not found")
-                    await update.callback_query.answer(
-                        "❌ Пост не найден",
-                        show_alert=True
-                    )
+                    await update.callback_query.answer("❌ Пост не найден", show_alert=True)
                     return
                 
                 logger.info(f"✅ Found post {post_id} for rejection")
                 
         except Exception as db_error:
             logger.error(f"Database error: {db_error}", exc_info=True)
-            await update.callback_query.answer(
-                f"❌ Ошибка БД",
-                show_alert=True
-            )
+            await update.callback_query.answer("❌ Ошибка БД", show_alert=True)
             return
         
-        # Сохраняем данные
         context.user_data['mod_post_id'] = post_id
         context.user_data['mod_post_user_id'] = post.user_id
         context.user_data['mod_waiting_for'] = 'reject_reason'
         
         logger.info(f"✅ Stored context for rejection: post={post_id}")
         
-        # ИСПРАВЛЕНО: Убираем кнопки, но НЕ удаляем сообщение
         try:
             await update.callback_query.edit_message_reply_markup(reply_markup=None)
             logger.info("Removed buttons from moderation message (kept message)")
         except Exception as e:
             logger.warning(f"Could not remove buttons: {e}")
         
-        # Добавляем статус в сообщение группы
         try:
             original_text = update.callback_query.message.text
             updated_text = f"{original_text}\n\n⏳ ОТКЛОНЯЕТСЯ модератором @{update.effective_user.username or 'Unknown'}"
             
-            await update.callback_query.edit_message_text(
-                text=updated_text
-            )
+            await update.callback_query.edit_message_text(text=updated_text)
             logger.info("Updated moderation message with rejection status")
         except Exception as e:
             logger.warning(f"Could not update message text: {e}")
@@ -251,7 +219,6 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
             f"⚠️ Отправьте причину одним сообщением мне в ЛС"
         )
         
-        # Отправляем инструкцию в ЛС модератору
         try:
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
@@ -260,7 +227,6 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"✅ Sent rejection instruction to moderator {update.effective_user.id} in PM")
         except Exception as send_error:
             logger.error(f"❌ Could not send to moderator PM: {send_error}")
-            # Fallback в группу
             try:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
@@ -270,18 +236,12 @@ async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.info("Sent rejection instruction to moderation group as fallback")
             except Exception as group_error:
                 logger.error(f"Could not send to group either: {group_error}")
-                await update.callback_query.answer(
-                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
-                    show_alert=True
-                )
+                await update.callback_query.answer("❌ Не удалось отправить инструкции. Напишите боту /start в ЛС", show_alert=True)
         
     except Exception as e:
         logger.error(f"Error starting reject process: {e}", exc_info=True)
         try:
-            await update.callback_query.answer(
-                f"❌ Ошибка: {str(e)[:100]}",
-                show_alert=True
-            )
+            await update.callback_query.answer(f"❌ Ошибка: {str(e)[:100]}", show_alert=True)
         except:
             pass
 
@@ -293,7 +253,6 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         user_id = context.user_data.get('mod_post_user_id')
         is_chat = context.user_data.get('mod_is_chat', False)
         
-        # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
         logger.info(f"=" * 50)
         logger.info(f"APPROVE WITH LINK - START")
         logger.info(f"Moderator: {update.effective_user.id} (@{update.effective_user.username})")
@@ -308,24 +267,17 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             await update.message.reply_text("❌ Ошибка: данные заявки не найдены")
             return
         
-        # Проверка ссылки
         if not link.startswith('https://t.me/'):
-            await update.message.reply_text(
-                "❌ Неверный формат ссылки\n\n"
-                "Ссылка должна начинаться с https://t.me/"
-            )
+            await update.message.reply_text("❌ Неверный формат ссылки\n\nСсылка должна начинаться с https://t.me/")
             return
         
-        # Обновляем статус поста
         try:
             from services.db import db
             from models import Post, PostStatus
             from sqlalchemy import select
             
             async with db.get_session() as session:
-                result = await session.execute(
-                    select(Post).where(Post.id == post_id)
-                )
+                result = await session.execute(select(Post).where(Post.id == post_id))
                 post = result.scalar_one_or_none()
                 
                 if not post:
@@ -342,23 +294,10 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # Отправляем уведомление пользователю
         destination_text = "чате" if is_chat else "канале"
-        
-        # ПРОВЕРЯЕМ возможность отправки пользователю
-        can_send = False
-        try:
-            chat_member = await context.bot.get_chat(user_id)
-            can_send = True
-            logger.info(f"✅ User {user_id} chat accessible: {chat_member.type}")
-        except Exception as check_error:
-            logger.warning(f"⚠️ Cannot access user {user_id} chat: {check_error}")
-            can_send = False
-        
-        # Сначала пробуем отправить с кнопками
         user_notified = False
         
-        if can_send:
+        try:
             success_keyboard = [
                 [InlineKeyboardButton("📺 Перейти к посту", url=link)],
                 [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
@@ -372,7 +311,9 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
                 f"🔔 Подписывайтесь на наши каналы:"
             )
             
-            await context.bot.send_message(
+            logger.info(f"📤 Attempting to send to user {user_id}...")
+            
+            sent_message = await context.bot.send_message(
                 chat_id=user_id,
                 text=user_message,
                 reply_markup=InlineKeyboardMarkup(success_keyboard),
@@ -380,12 +321,11 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
             )
             
             user_notified = True
-            logger.info(f"✅ User {user_id} notified successfully about post {post_id}")
+            logger.info(f"✅✅✅ SUCCESS! Message sent to user {user_id}, message_id: {sent_message.message_id}")
             
         except Exception as notify_error:
-            logger.error(f"❌ Error notifying user {user_id}: {notify_error}", exc_info=True)
+            logger.error(f"❌❌❌ FAILED to notify user {user_id}: {notify_error}", exc_info=True)
             
-            # Пробуем без кнопок (fallback)
             try:
                 simple_message = (
                     f"✅ Ваша заявка одобрена!\n\n"
@@ -396,18 +336,16 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
                     f"• Каталог: https://t.me/trixvault"
                 )
                 
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=simple_message
-                )
+                logger.info(f"📤 Attempting fallback (no buttons) to user {user_id}...")
+                
+                await context.bot.send_message(chat_id=user_id, text=simple_message)
                 
                 user_notified = True
-                logger.info(f"✅ User {user_id} notified (fallback without buttons)")
+                logger.info(f"✅ Fallback SUCCESS for user {user_id}")
                 
             except Exception as fallback_error:
-                logger.error(f"❌ Fallback also failed for user {user_id}: {fallback_error}", exc_info=True)
+                logger.error(f"❌ Fallback FAILED for user {user_id}: {fallback_error}", exc_info=True)
         
-        # Подтверждение модератору
         try:
             if user_notified:
                 mod_message = (
@@ -438,7 +376,6 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         
         logger.info(f"✅ Approval process completed for post {post_id}, user_notified={user_notified}")
         
-        # Очищаем контекст
         context.user_data.pop('mod_post_id', None)
         context.user_data.pop('mod_post_user_id', None)
         context.user_data.pop('mod_waiting_for', None)
@@ -466,16 +403,13 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Причина слишком короткая (минимум 5 символов)")
             return
         
-        # Обновляем статус
         try:
             from services.db import db
             from models import Post, PostStatus
             from sqlalchemy import select
             
             async with db.get_session() as session:
-                result = await session.execute(
-                    select(Post).where(Post.id == post_id)
-                )
+                result = await session.execute(select(Post).where(Post.id == post_id))
                 post = result.scalar_one_or_none()
                 
                 if not post:
@@ -492,7 +426,6 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text(f"❌ Ошибка БД: {str(db_error)[:100]}")
             return
         
-        # Уведомляем пользователя БЕЗ Markdown
         try:
             user_message = (
                 f"❌ Ваша заявка отклонена\n\n"
@@ -501,12 +434,8 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
                 f"Используйте /start для возврата в главное меню."
             )
             
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=user_message
-            )
+            await context.bot.send_message(chat_id=user_id, text=user_message)
             
-            # Подтверждение модератору
             mod_confirmation = (
                 f"❌ ЗАЯВКА ОТКЛОНЕНА\n\n"
                 f"👤 Пользователь уведомлен\n"
@@ -525,7 +454,6 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
                 f"User ID: {user_id}\nPost ID: {post_id}"
             )
         
-        # Очищаем контекст
         context.user_data.pop('mod_post_id', None)
         context.user_data.pop('mod_post_user_id', None)
         context.user_data.pop('mod_waiting_for', None)
@@ -534,7 +462,6 @@ async def process_reject_with_reason(update: Update, context: ContextTypes.DEFAU
         logger.error(f"Error processing rejection: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
 
-# Legacy functions для совместимости
 async def approve_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
     """Legacy function"""
     await start_approve_process(update, context, post_id)
