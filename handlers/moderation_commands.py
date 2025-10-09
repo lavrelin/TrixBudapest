@@ -345,6 +345,9 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         # Отправляем уведомление пользователю
         destination_text = "чате" if is_chat else "канале"
         
+        # Отправляем уведомление пользователю
+        destination_text = "чате" if is_chat else "канале"
+        
         # ПРОВЕРЯЕМ возможность отправки пользователю
         can_send = False
         try:
@@ -359,30 +362,31 @@ async def process_approve_with_link(update: Update, context: ContextTypes.DEFAUL
         user_notified = False
         
         if can_send:
-            success_keyboard = [
-                [InlineKeyboardButton("📺 Перейти к посту", url=link)],
-                [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
-                [InlineKeyboardButton("📚 Каталог услуг", url="https://t.me/trixvault")]
-            ]
-            
-            user_message = (
-                f"✅ Ваша заявка одобрена!\n\n"
-                f"📝 Ваш пост опубликован в {destination_text}.\n\n"
-                f"🔗 Ссылка на публикацию:\n{link}\n\n"
-                f"🔔 Подписывайтесь на наши каналы:"
-            )
-            
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=user_message,
-                reply_markup=InlineKeyboardMarkup(success_keyboard),
-                disable_web_page_preview=False
-            )
-            
-            user_notified = True
-            logger.info(f"✅ User {user_id} notified successfully about post {post_id}")
-            
-        except Exception as notify_error:
+            try:
+                success_keyboard = [
+                    [InlineKeyboardButton("📺 Перейти к посту", url=link)],
+                    [InlineKeyboardButton("📢 Наш канал", url="https://t.me/snghu")],
+                    [InlineKeyboardButton("📚 Каталог услуг", url="https://t.me/trixvault")]
+                ]
+                
+                user_message = (
+                    f"✅ Ваша заявка одобрена!\n\n"
+                    f"📝 Ваш пост опубликован в {destination_text}.\n\n"
+                    f"🔗 Ссылка на публикацию:\n{link}\n\n"
+                    f"🔔 Подписывайтесь на наши каналы:"
+                )
+                
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=user_message,
+                    reply_markup=InlineKeyboardMarkup(success_keyboard),
+                    disable_web_page_preview=False
+                )
+                
+                user_notified = True
+                logger.info(f"✅ User {user_id} notified successfully about post {post_id}")
+                
+            except Exception as notify_error:
             logger.error(f"❌ Error notifying user {user_id}: {notify_error}", exc_info=True)
             
             # Пробуем без кнопок (fallback)
