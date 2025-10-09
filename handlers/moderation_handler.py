@@ -146,48 +146,137 @@ async def start_approve_process(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error starting approve: {e}", exc_info=True)
 
 async def start_reject_process(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: int):
-    """Start rejection process"""
+    """Start rejection process - ИСПРАВЛЕНО: добавлено детальное логирование"""
     try:
-        logger.info(f"Starting reject process for post {post_id}")
+        logger.info(f"=" * 50)
+        logger.info(f"START REJECT PROCESS")
+        logger.info(f"Post ID: {post_id}")
+        logger.info(f"Moderator: {update.effective_user.id} (@{update.effective_user.username})")
+        logger.info(f"=" * 50)
         
         from services.db import db
+        
+        # ПРОВЕРКА 1: База данных доступна?
         if not db.session_maker:
+            logger.error("❌ Database not available")
             await update.callback_query.answer("❌ База данных недоступна", show_alert=True)
             return
         
-        from models import Post
-        from sqlalchemy import select
+        logger.info("✅ Database available")
         
-        async with db.get_session() as session:
-            result = await session.execute(select(Post).where(Post.id == post_id))
-            post = result.scalar_one_or_none()
+        # ПРОВЕРКА 2: Пост существует?
+        try:
+            from models import Post
+            from sqlalchemy import select
             
-            if not post:
-                await update.callback_query.answer("❌ Пост не найден", show_alert=True)
-                return
+            logger.info(f"🔍 Searching for post {post_id} in database...")
+            
+            async with db.get_session() as session:
+                result = await session.execute(
+                    select(Post).where(Post.id == post_id)
+                )
+                post = result.scalar_one_or_none()
+                
+                if not post:
+                    logger.error(f"❌ Post {post_id} not found in database")
+                    await update.callback_query.answer("❌ Пост не найден", show_alert=True)
+                    return
+                
+                logger.info(f"✅ Found post {post_id}, user_id: {post.user_id}")
+                
+                # Сохраняем user_id для дальнейшего использования
+                target_user_id = post.user_id
+                
+        except Exception as db_error:
+            logger.error(f"❌ Database error: {db_error}", exc_info=True)
+            await update.callback_query.answer("❌ Ошибка БД", show_alert=True)
+            return
         
+        # ПРОВЕРКА 3: Сохраняем данные в контекст
+        logger.info(f"💾 Saving data to context...")
         context.user_data['mod_post_id'] = post_id
-        context.user_data['mod_post_user_id'] = post.user_id
+        context.user_data['mod_post_user_id'] = target_user_id
         context.user_data['mod_waiting_for'] = 'reject_reason'
         
-        try:
-            await update.callback_query.edit_message_reply_markup(reply_markup=None)
-        except:
-            pass
+        logger.info(f"✅ Context saved:")
+        logger.info(f"  - mod_post_id: {context.user_data.get('mod_post_id')}")
+        logger.info(f"  - mod_post_user_id: {context.user_data.get('mod_post_user_id')}")
+        logger.info(f"  - mod_waiting_for: {context.user_data.get('mod_waiting_for')}")
         
+        # ПРОВЕРКА 4: Убираем кнопки из сообщения
+        try:
+            logger.info("🔘 Removing buttons from moderation message...")
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+            logger.info("✅ Buttons removed")
+        except Exception as button_error:
+            logger.warning(f"⚠️ Could not remove buttons: {button_error}")
+        
+        # ПРОВЕРКА 5: Обновляем текст сообщения
+        try:
+            logger.info("📝 Updating moderation message text...")
+            original_text = update.callback_query.message.text
+            updated_text = f"{original_text}\n\n⏳ ОТКЛОНЯЕТСЯ модератором @{update.effective_user.username or 'Unknown'}"
+            
+            await update.callback_query.edit_message_text(text=updated_text)
+            logger.info("✅ Message text updated")
+        except Exception as text_error:
+            logger.warning(f"⚠️ Could not update message text: {text_error}")
+        
+        # ПРОВЕРКА 6: Формируем инструкцию
         instruction_text = (
             f"❌ ОТКЛОНЕНИЕ ЗАЯВКИ\n\n"
-            f"📊 Post ID: {post_id}\n\n"
-            f"📝 Напишите причину отклонения (минимум 5 символов)"
+            f"📊 Post ID: {post_id}\n"
+            f"👤 User ID: {target_user_id}\n\n"
+            f"📝 Напишите причину отклонения:\n"
+            f"(Будет отправлена пользователю)\n\n"
+            f"⚠️ Минимум 5 символов\n"
+            f"💡 Отправьте причину одним сообщением мне в ЛС"
         )
         
+        logger.info(f"📤 Attempting to send instruction to moderator {update.effective_user.id}...")
+        
+        # ПРОВЕРКА 7: Отправляем инструкцию в ЛС модератору
         try:
-            await context.bot.send_message(chat_id=update.effective_user.id, text=instruction_text)
-        except:
-            pass
+            sent_message = await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=instruction_text
+            )
+            logger.info(f"✅✅✅ SUCCESS! Instruction sent to moderator {update.effective_user.id}, message_id: {sent_message.message_id}")
+            logger.info(f"✅ Moderator should now send rejection reason in PM")
+            
+        except Exception as send_error:
+            logger.error(f"❌ Could not send instruction to moderator PM: {send_error}", exc_info=True)
+            
+            # Fallback: отправляем в группу модерации
+            try:
+                logger.info("📤 Fallback: sending instruction to moderation group...")
+                fallback_message = await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"⚠️ @{update.effective_user.username or 'Модератор'}, напишите мне /start в ЛС!\n\n{instruction_text}",
+                    reply_to_message_id=update.callback_query.message.message_id
+                )
+                logger.info(f"✅ Fallback instruction sent to group, message_id: {fallback_message.message_id}")
+            except Exception as group_error:
+                logger.error(f"❌ Could not send to group either: {group_error}", exc_info=True)
+                await update.callback_query.answer(
+                    "❌ Не удалось отправить инструкции. Напишите боту /start в ЛС",
+                    show_alert=True
+                )
+        
+        logger.info(f"=" * 50)
+        logger.info(f"REJECT PROCESS STARTED SUCCESSFULLY")
+        logger.info(f"Waiting for moderator to send rejection reason...")
+        logger.info(f"=" * 50)
         
     except Exception as e:
-        logger.error(f"Error starting reject: {e}", exc_info=True)
+        logger.error(f"❌ CRITICAL ERROR in start_reject_process: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer(
+                f"❌ Критическая ошибка: {str(e)[:100]}",
+                show_alert=True
+            )
+        except:
+            pass
 
 async def process_approve_with_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process approval with link"""
