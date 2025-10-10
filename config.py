@@ -11,14 +11,43 @@ class Config:
     # Telegram Bot Token - ОБЯЗАТЕЛЬНЫЙ
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     
+    # ============= БАЗА ДАННЫХ =============
+    # ИСПРАВЛЕНО: Правильная обработка для Railway
+    
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    
+    # Если DATABASE_URL не установлена (локальная разработка)
+    if not DATABASE_URL:
+        DATABASE_URL = "sqlite:///./trixbot.db"
+        print("⚠️  DATABASE_URL не установлена, используется SQLite локально")
+    else:
+        print(f"✅ DATABASE_URL установлена: {DATABASE_URL[:50]}...")
+    
+    # КРИТИЧНО: Конвертируем старый формат PostgreSQL в новый для asyncpg
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql+asyncpg://', 1)
+        print("✅ Конвертирован postgres:// → postgresql+asyncpg://")
+    
+    elif DATABASE_URL.startswith('postgresql://'):
+        if 'asyncpg' not in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://', 1)
+            print("✅ Добавлен asyncpg драйвер")
+    
+    elif DATABASE_URL.startswith('sqlite:///'):
+        if 'aiosqlite' not in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace('sqlite:///', 'sqlite+aiosqlite:///', 1)
+            print("✅ Добавлен aiosqlite драйвер")
+    
+    print(f"📊 Финальный DATABASE_URL: {DATABASE_URL[:50]}...\n")
+    
     # ============= КАНАЛЫ И ГРУППЫ =============
     
     # Основные каналы
     TARGET_CHANNEL_ID = int(os.getenv("TARGET_CHANNEL_ID", "-1002743668534"))
-    MODERATION_GROUP_ID = int(os.getenv("MODERATION_GROUP_ID", "-1002734837434"))  # Группа для заявок на публикацию
-    ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "-4843909295"))  # Группа для администраторов (уведомления)
+    MODERATION_GROUP_ID = int(os.getenv("MODERATION_GROUP_ID", "-1002734837434"))
+    ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "-4843909295"))
     CHAT_FOR_ACTUAL = int(os.getenv("CHAT_FOR_ACTUAL", "-1002734837434"))
-    BUDAPEST_CHAT_ID = int(os.getenv("BUDAPEST_CHAT_ID", "-1002883770818"))  # ✅ ДОБАВЛЕНО: Чат для игнорирования команд
+    BUDAPEST_CHAT_ID = int(os.getenv("BUDAPEST_CHAT_ID", "-1002883770818"))
     
     # Дополнительные каналы
     TRADE_CHANNEL_ID = int(os.getenv("TRADE_CHANNEL_ID", "-1003033694255"))
@@ -27,7 +56,7 @@ class Config:
     CATALOG_CHANNEL = os.getenv("CATALOG_CHANNEL", "https://t.me/trixvault")
     TRADE_CHANNEL = os.getenv("TRADE_CHANNEL", "https://t.me/hungarytrade")
 
-    # НОВОЕ: Каналы для мониторинга статистики
+    # Каналы для мониторинга статистики
     STATS_CHANNELS = {
         'budapest_channel': int(os.getenv("BUDAPEST_CHANNEL_ID", "-1002743668534")),
         'budapest_chat': int(os.getenv("BUDAPEST_CHAT_ID", "-1002734837434")),
@@ -35,22 +64,14 @@ class Config:
         'trade_channel': int(os.getenv("TRADE_CHANNEL_ID", "-1003033694255"))
     }
     
-    # ============= БАЗА ДАННЫХ =============
-    
-    # Для Railway - автоматически предоставляется DATABASE_URL
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./trixbot.db")
-    
     # ============= ПРАВА ДОСТУПА =============
     
-    # Админы (замените на свои Telegram ID)
     ADMIN_IDS: Set[int] = set(map(int, filter(None, os.getenv("ADMIN_IDS", "7811593067").split(","))))
-    
-    # Модераторы
     MODERATOR_IDS: Set[int] = set(map(int, filter(None, os.getenv("MODERATOR_IDS", "").split(","))))
     
     # ============= НАСТРОЙКИ КУЛДАУНОВ =============
     
-    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3600"))  # 1 час по умолчанию
+    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3600"))
     
     # ============= АВТОПОСТИНГ =============
     
@@ -60,7 +81,7 @@ class Config:
     
     # ============= СТАТИСТИКА =============
     
-    STATS_INTERVAL_HOURS = int(os.getenv("STATS_INTERVAL_HOURS", "8"))  # Каждые 8 часов
+    STATS_INTERVAL_HOURS = int(os.getenv("STATS_INTERVAL_HOURS", "8"))
     
     # ============= СООБЩЕНИЯ ПО УМОЛЧАНИЮ =============
     
@@ -77,7 +98,6 @@ class Config:
     
     # ============= ФИЛЬТРАЦИЯ =============
     
-    # Запрещенные домены (можно расширить через переменные окружения)
     BANNED_DOMAINS = [
         "bit.ly", "tinyurl.com", "cutt.ly", "goo.gl",
         "shorturl.at", "ow.ly", "is.gd", "buff.ly"
@@ -124,12 +144,12 @@ class Config:
 
 🤖 Основное:
 • Bot Token: {'✅ Установлен' if cls.BOT_TOKEN else '❌ Не установлен'}
+• Database: {'✅ PostgreSQL' if 'postgresql' in cls.DATABASE_URL else '✅ SQLite' if 'sqlite' in cls.DATABASE_URL else '❓ Неизвестно'}
 
 📢 Группы и каналы:
 • Канал публикаций: {cls.TARGET_CHANNEL_ID}
 • Группа модерации (заявки): {cls.MODERATION_GROUP_ID}
 • Группа администрирования: {cls.ADMIN_GROUP_ID}
-• Актуальное: {cls.CHAT_FOR_ACTUAL}
 • Торговый канал: {cls.TRADE_CHANNEL_ID}
 • Будапешт чат (игнор команд): {cls.BUDAPEST_CHAT_ID}
 
